@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python
+**/venv/
+**/.venv/
+*.py[cod]
+__pycache__/
+
+# Go
+/bin/
+/pkg/
+/vendor/
+
+# IDEs
+.vscode/
+.idea/
+
+# Docker
+*.env
+docker-compose.override.yml
+
+# Logs
+*.log

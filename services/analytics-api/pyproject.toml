@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "auth-api"
+name = "analytics-api"
 version = "0.1.0"
-description = "Authentication service"
+description = "Analytics service"
 authors = ["Dan"]
 
 package-mode = false

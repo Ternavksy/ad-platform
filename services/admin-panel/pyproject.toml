@@ -1,15 +1,15 @@
 [tool.poetry]
-name = "auth-api"
+name = "admin-panel"
 version = "0.1.0"
-description = "Authentication service"
+description = "Django admin panel"
 authors = ["Dan"]
 
 package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = "^0.128.0"
-uvicorn = "^0.40.0"
+django = "^5.0"
+gunicorn = "^23.0.0"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,0 +1,81 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+       MYSQL_ROOT_PASSWORD: rootpassword
+       MYSQL_DATABASE: ad_platform
+       MYSQL_USER: dev
+       MYSQL_PASSWORD: devpass
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+      - '8123:8123'
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+
+  tarantool:
+    image: tarantool/tarantool:2.10
+    restart: unless-stopped
+    ports:
+      - '33013:33013'
+
+  ads-api:
+    build: ../services/ads-api
+    depends_on:
+      - mysql
+      - rabbitmq
+      - redis
+    ports:
+      - '8080:8080'
+
+  auth-api:
+    build: ../services/auth-api
+    depends_on:
+      - mysql
+      - redis
+    ports:
+      - '8000:8000'
+
+  analytics-api:
+    build: ../services/analytics-api
+    depends_on:
+      - clickhouse
+      - rabbitmq
+    ports:
+      - '8100:8100'
+
+  admin-panel:
+    build: ../services/admin-panel
+    depends_on:
+      - mysql
+    ports:
+      - '8001:8000'
+
+volumes:
+  mysql_data:
+  clickhouse_data:

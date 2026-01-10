@@ -13,7 +13,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.db.base import Base
-from app.models.user import User
+from app.models import (
+    user,
+    balance,
+    transaction,
+    campaign,
+    ad,
+    creative,
+)
 
 target_metadata = Base.metadata
 

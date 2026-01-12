@@ -1,6 +1,9 @@
 package main
 
 import (
+	"ads-api/internal/handler"
+	"ads-api/internal/service"
+	"ads-api/internal/store"
 	"context"
 	"fmt"
 	"net/http"
@@ -12,8 +15,29 @@ import (
 )
 
 func main() {
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		panic("DB_DSN is not set")
+	}
+
+	db, err := store.NewMySQL(dsn)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	campaignStore := store.NewCampaignStore(db)
+
+	campaignService := service.NewCampaignService(campaignStore)
+
+	campaignHandler := handler.NewCampaignHandler(campaignService)
+
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(handler.RequestID(),
+		handler.Logger(),
+		handler.Timeout(3*time.Second),
+		gin.Recovery(),
+	)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "OK"})
@@ -22,6 +46,10 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "ads-api running"})
 	})
+
+	r.POST("/campaigns", campaignHandler.Create)
+	r.GET("/campaigns/:id", campaignHandler.Get)
+
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: r,

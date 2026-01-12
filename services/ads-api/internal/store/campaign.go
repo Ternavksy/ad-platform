@@ -28,7 +28,7 @@ func (s *CampaignStore) Create(ctx context.Context, c *model.Campaign) error {
 	return nil
 }
 
-func (s *CampaignStore) GetBYID(ctx context.Context, id int64) (*model.Campaign, error) {
+func (s *CampaignStore) GetByID(ctx context.Context, id int64) (*model.Campaign, error) {
 	var c model.Campaign
 	err := s.db.GetContext(ctx, &c, `
 	SELECT id, user_id, name, status

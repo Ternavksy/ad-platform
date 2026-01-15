@@ -5,5 +5,6 @@ RUN go mod download && GOOS=linux GOARCH=amd64 go build -o /bin/ads-api ./cmd/se
 
 FROM alpine:3.18
 COPY --from=builder /bin/ads-api /bin/ads-api
+COPY --from=builder /app/migrations ./migrations
 EXPOSE 8080
 ENTRYPOINT ["/bin/ads-api"]

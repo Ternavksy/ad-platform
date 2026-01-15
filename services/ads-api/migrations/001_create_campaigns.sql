@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS campaigns(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT,
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL
+);
+

@@ -26,11 +26,21 @@ func main() {
 	}
 	defer db.Close()
 
+	if err := store.RunMigrations(db); err != nil {
+		panic(err)
+	}
+
 	campaignStore := store.NewCampaignStore(db)
 
 	campaignService := service.NewCampaignService(campaignStore)
 
 	campaignHandler := handler.NewCampaignHandler(campaignService)
+
+	adStore := store.NewAdStore(db)
+
+	adService := service.NewAdService(adStore)
+
+	adHandler := handler.NewAdHandler(adService)
 
 	r := gin.New()
 	r.Use(handler.RequestID(),
@@ -49,6 +59,9 @@ func main() {
 
 	r.POST("/campaigns", campaignHandler.Create)
 	r.GET("/campaigns/:id", campaignHandler.Get)
+
+	r.POST("/ads", adHandler.Create)
+	r.GET("/ads/:id", adHandler.Get)
 
 	srv := &http.Server{
 		Addr:    ":8080",

@@ -52,6 +52,8 @@ services:
       - redis
     ports:
       - '8080:8080'
+    environment:
+      DB_DSN: dev:devpass@tcp(mysql:3306)/ad_platform?parseTime=true
 
   auth-api:
     build: ../services/auth-api

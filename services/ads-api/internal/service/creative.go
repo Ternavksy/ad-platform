@@ -28,3 +28,20 @@ func (s *CreativeService) GetByID(ctx context.Context, id int64) (*model.Creativ
 	}
 	return creative, nil
 }
+
+func (s *CreativeService) Update(ctx context.Context, creative *model.Creative) error {
+	if creative.ID <= 0 {
+		return ErrNotFound
+	}
+	if creative.Content == "" {
+		return ErrInvalidInput
+	}
+	return s.store.Update(ctx, creative)
+}
+
+func (s *CreativeService) Delete(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return ErrNotFound
+	}
+	return s.store.Delete(ctx, id)
+}

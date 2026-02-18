@@ -40,3 +40,19 @@ func (s *CampaignStore) GetByID(ctx context.Context, id int64) (*model.Campaign,
 	}
 	return &c, nil
 }
+
+func (s *CampaignStore) Update(ctx context.Context, c *model.Campaign) error {
+	query := `
+		UPDATE campaigns
+		SET name = ?, status = ?
+		WHERE id = ?
+	`
+	_, err := s.db.ExecContext(ctx, query, c.Name, c.Status, c.ID)
+	return err
+}
+
+func (s *CampaignStore) Delete(ctx context.Context, id int64) error {
+	query := `DELETE FROM campaigns WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}

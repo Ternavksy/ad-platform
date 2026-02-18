@@ -40,3 +40,19 @@ func (s *AdStore) GetByID(ctx context.Context, id int64) (*model.Ad, error) {
 	}
 	return &ad, nil
 }
+
+func (s *AdStore) Update(ctx context.Context, ad *model.Ad) error {
+	query := `
+		UPDATE ads
+		SET title = ?, status = ?
+		WHERE id = ?
+	`
+	_, err := s.db.ExecContext(ctx, query, ad.Title, ad.Status, ad.ID)
+	return err
+}
+
+func (s *AdStore) Delete(ctx context.Context, id int64) error {
+	query := `DELETE FROM ads WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}

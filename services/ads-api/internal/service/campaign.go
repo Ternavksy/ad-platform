@@ -28,3 +28,20 @@ func (s *CampaignService) GetByID(ctx context.Context, id int64) (*model.Campaig
 	}
 	return s.store.GetByID(ctx, id)
 }
+
+func (s *CampaignService) Update(ctx context.Context, c *model.Campaign) error {
+	if c.ID <= 0 {
+		return ErrNotFound
+	}
+	if c.Name == "" {
+		return errors.New("campaign name required")
+	}
+	return s.store.Update(ctx, c)
+}
+
+func (s *CampaignService) Delete(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return ErrNotFound
+	}
+	return s.store.Delete(ctx, id)
+}

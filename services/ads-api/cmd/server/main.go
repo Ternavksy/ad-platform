@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -56,6 +57,8 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "ads-api running"})
 	})
+
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.POST("/campaigns", campaignHandler.Create)
 	r.GET("/campaigns/:id", campaignHandler.Get)

@@ -107,11 +107,29 @@ Health check: curl http://localhost:8000/health
 Health check: curl http://localhost:8080/health
 
 
-## ✨ Новые изменения
-
 - **HTTP-эндпоинты:** добавлены CRUD-операции `GET`, `POST`, `PUT`, `DELETE` для соответствующих ресурсов (Campaigns, Ads, Creative) в `ads-api`.
 
 - **Мониторинг:** добавлена интеграция с Prometheus и Grafana. Prometheus доступен по http://localhost:9090, Grafana — http://localhost:3000 (админ: `admin1!` / `admin1!`).
+
+- **Метрики приложений:** в `ads-api` и `auth-api` добавлен endpoint `/metrics` в Prometheus-формате. Prometheus собирает их по таргетам в `infra/prometheus/prometheus.yml`.
+
+**Проверка метрик и экспортёров**
+
+- Ads API метрики: `curl http://localhost:8080/metrics`
+- Auth API метрики: `curl http://localhost:8000/metrics`
+- mysqld_exporter: `curl http://localhost:9104/metrics`
+- node_exporter: `curl http://localhost:9100/metrics`
+
+Чтобы `mysqld_exporter` корректно собирал метрики, создайте в MySQL отдельного пользователя `metrics` и дайте минимальные права:
+
+```bash
+docker-compose exec mysql mysql -u root -prootpassword -e "\
+CREATE USER IF NOT EXISTS 'metrics'@'%' IDENTIFIED BY 'metrics_password'; \
+GRANT PROCESS, REPLICATION CLIENT ON *.* TO 'metrics'@'%'; \
+FLUSH PRIVILEGES;"
+```
+
+В `infra/docker-compose.yml` `mysqld_exporter` использует DSN `metrics:metrics_password@tcp(mysql:3306)/`.
 
 
 ## 🛠️ Используемые технологии

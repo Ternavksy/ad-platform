@@ -90,6 +90,20 @@ services:
       - auth-api
       - analytics-api
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    ports:
+      - '9100:9100'
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:latest
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: 'metrics:metrics_password@tcp(mysql:3306)/'
+    ports:
+      - '9104:9104'
+
   grafana:
     image: grafana/grafana:latest
     restart: unless-stopped

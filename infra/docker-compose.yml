@@ -12,6 +12,12 @@ services:
       - '3306:3306'
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
@@ -99,8 +105,12 @@ services:
   mysqld-exporter:
     image: prom/mysqld-exporter:latest
     restart: unless-stopped
+    depends_on:
+      - mysql
     environment:
-      DATA_SOURCE_NAME: 'metrics:metrics_password@tcp(mysql:3306)/'
+      DATA_SOURCE_NAME: 'metrics:metrics_password@(mysql:3306)/'
+    volumes:
+      - ./mysql/.my.cnf:/.my.cnf:ro
     ports:
       - '9104:9104'
 

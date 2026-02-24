@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN pip install --upgrade pip \
-    && pip install poetry
+    && pip install poetry six
 
 COPY pyproject.toml poetry.lock* ./
 

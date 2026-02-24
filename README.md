@@ -34,7 +34,6 @@ HTTP API для рекламного кабинета:
 
 ---
 
-
 ## 🧩 Реализовано на текущий момент
 
 ### Auth API
@@ -108,6 +107,13 @@ Health check: curl http://localhost:8000/health
 Health check: curl http://localhost:8080/health
 
 
+## ✨ Новые изменения
+
+- **HTTP-эндпоинты:** добавлены CRUD-операции `GET`, `POST`, `PUT`, `DELETE` для соответствующих ресурсов (Campaigns, Ads, Creative) в `ads-api`.
+
+- **Мониторинг:** добавлена интеграция с Prometheus и Grafana. Prometheus доступен по http://localhost:9090, Grafana — http://localhost:3000 (админ: `admin1!` / `admin1!`).
+
+
 ## 🛠️ Используемые технологии
 
 ### Backend
@@ -143,3 +149,7 @@ Health check: curl http://localhost:8080/health
 - Tarantool
 
 - ClickHouse
+
+- Prometheus
+
+- Grafana

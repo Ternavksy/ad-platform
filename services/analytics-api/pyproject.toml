@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Analytics service"
 authors = ["Dan"]
 
-package-mode = false
+packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"

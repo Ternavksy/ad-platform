@@ -51,8 +51,9 @@ jobs:
           if [ -f services/${{ matrix.service }}/pyproject.toml ]; then
             python -m pip install poetry
             pushd services/${{ matrix.service }}
-            poetry export -f requirements.txt --without-hashes -o reqs.txt || true
-            pip install -r reqs.txt || true
+            # export including dev dependencies so test deps like pytest are installed
+            poetry export -f requirements.txt --without-hashes --dev -o reqs.txt
+            pip install -r reqs.txt
             popd
           fi
       - name: Run tests

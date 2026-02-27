@@ -51,12 +51,16 @@ jobs:
           if [ -f services/${{ matrix.service }}/pyproject.toml ]; then
             python -m pip install poetry
             pushd services/${{ matrix.service }}
-            # export including dev dependencies so test deps like pytest are installed
-            poetry export -f requirements.txt --without-hashes --dev -o reqs.txt
-            pip install -r reqs.txt
+            # install dependencies using poetry (including dev deps) and create a venv
+            poetry install --no-interaction
             popd
           fi
       - name: Run tests
         working-directory: services/${{ matrix.service }}
         run: |
-          python -m pytest -q
+          # prefer running tests through poetry if pyproject exists and poetry venv is created
+          if [ -f pyproject.toml ]; then
+            poetry run pytest -q
+          else
+            python -m pytest -q
+          fi

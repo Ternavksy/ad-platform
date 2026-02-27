@@ -2,7 +2,10 @@ module ads-api
 
 go 1.25.4
 
-require github.com/gin-gonic/gin v1.11.0
+require (
+	github.com/gin-gonic/gin v1.11.0
+	github.com/mattn/go-sqlite3 v1.14.22
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

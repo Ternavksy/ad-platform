@@ -142,7 +142,7 @@ FLUSH PRIVILEGES;"
 
 - sqlx
 
-- Python 3.11
+- Python 3.12
 
 - FastAPI
 
@@ -171,3 +171,15 @@ FLUSH PRIVILEGES;"
 - Prometheus
 
 - Grafana
+
+## ✅ CI/CD и тесты
+
+- В репозиторий добавлен workflow GitHub Actions (`.github/workflows/ci.yml`) для автоматического запуска сборки и тестов при `push`/`pull_request`.
+- CI запускает:
+	- Go-тесты для `services/ads-api` (используется SQLite/CGO для in-memory тестов).
+	- Python-тесты для `services/auth-api` и `services/analytics-api` (Python 3.12).
+- Локальные тесты также добавлены в кодовую базу:
+	- `services/auth-api/tests` — безопасность и интеграционные проверки (in-memory DB override).
+	- `services/analytics-api/tests` — health/metrics checks.
+	- `services/ads-api/internal/model/tests` и `services/ads-api/internal/service/tests` — проверка моделей и service-логики с in-memory sqlite.
+- CI устанавливает необходимые системные зависимости (gcc, sqlite dev) и включает `CGO_ENABLED` для корректной работы `github.com/mattn/go-sqlite3`.

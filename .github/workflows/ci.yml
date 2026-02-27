@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  go:
+    name: Go build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25'
+      - name: Install system deps for Go tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libsqlite3-dev
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+      - name: Build and test
+        working-directory: services/ads-api
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          go test ./... -v
+          go vet ./...
+
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-api, analytics-api]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install deps (if any)
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f services/${{ matrix.service }}/pyproject.toml ]; then
+            python -m pip install poetry
+            pushd services/${{ matrix.service }}
+            poetry export -f requirements.txt --without-hashes -o reqs.txt || true
+            pip install -r reqs.txt || true
+            popd
+          fi
+      - name: Run tests
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pytest -q

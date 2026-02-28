@@ -8,8 +8,7 @@ RUN pip install --upgrade pip \
 COPY pyproject.toml poetry.lock* ./
 
 RUN poetry config virtualenvs.create false \
-    && poetry lock || true \
-    && poetry install --no-interaction --no-ansi
+    && poetry install --no-interaction --no-ansi --no-root
 
 COPY . .
 

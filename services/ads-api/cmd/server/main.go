@@ -27,10 +27,6 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := store.RunMigrations(db); err != nil {
-		panic(err)
-	}
-
 	campaignStore := store.NewCampaignStore(db)
 
 	campaignService := service.NewCampaignService(campaignStore)

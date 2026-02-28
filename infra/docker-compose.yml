@@ -3,17 +3,14 @@ services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
-    environment:
-       MYSQL_ROOT_PASSWORD: rootpassword
-       MYSQL_DATABASE: ad_platform
-       MYSQL_USER: dev
-       MYSQL_PASSWORD: devpass
+    env_file:
+      - .env
     ports:
       - '3306:3306'
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-uroot", "-prootpassword"]
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,9 +28,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+    env_file:
+      - .env
     ports:
       - '5672:5672'
       - '15672:15672'
@@ -52,20 +48,27 @@ services:
 
   ads-api:
     build: ../services/ads-api
+    env_file:
+    - .env
     depends_on:
-      - mysql
-      - rabbitmq
-      - redis
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+         condition: service_started
+      redis:
+         condition: service_started
     ports:
       - '8080:8080'
-    environment:
-      DB_DSN: dev:devpass@tcp(mysql:3306)/ad_platform?parseTime=true
 
   auth-api:
     build: ../services/auth-api
+    env_file:
+    - .env
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+         condition: service_started
     ports:
       - '8000:8000'
 
@@ -80,7 +83,8 @@ services:
   admin-panel:
     build: ../services/admin-panel
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     ports:
       - '8001:8000'
 
@@ -106,9 +110,10 @@ services:
     image: prom/mysqld-exporter:latest
     restart: unless-stopped
     depends_on:
-      - mysql
-    environment:
-      DATA_SOURCE_NAME: 'metrics:metrics_password@(mysql:3306)/'
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
     volumes:
       - ./mysql/.my.cnf:/.my.cnf:ro
     ports:
@@ -122,8 +127,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+    env_file:
+      - .env
 
 volumes:
   mysql_data:

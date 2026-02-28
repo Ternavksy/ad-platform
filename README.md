@@ -68,6 +68,22 @@ HTTP API для рекламного кабинета:
 
 ---
 
+## 🔐 Конфигурация через .env
+Проект использует переменные окружения.
+В папке infra:
+```bash ```
+cp env.example .env
+
+В .env необходимо задать:
+- MYSQL_ROOT_PASSWORD
+- MYSQL_PASSWORD
+- SECRET_KEY
+- GF_SECURITY_ADMIN_PASSWORD
+
+.env не коммитится в git (добавлен в .gitignore).
+
+---
+
 ## 🚀 Локальный запуск
 
 ### 1. Проверка окружения

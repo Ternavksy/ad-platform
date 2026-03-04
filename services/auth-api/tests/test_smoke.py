@@ -50,7 +50,7 @@ def test_register_and_login_flow():
     payload = {"email": "alice@example.com", "password": "secret123"}
 
     r = client.post("/auth/register", json=payload)
-    assert r.status_code == 200
+    assert r.status_code == 201
     data = r.json()
     assert data["email"] == payload["email"]
     assert "id" in data

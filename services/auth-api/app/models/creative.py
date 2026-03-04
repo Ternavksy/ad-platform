@@ -7,3 +7,4 @@ class Creative(Base):
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     ad_id = Column(BigInteger, ForeignKey("ads.id"), nullable=False)
     content = Column(String(1024), nullable=False)
+    transaction_id = Column(BigInteger, ForeignKey("transactions.id"), nullable=True)

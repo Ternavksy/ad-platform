@@ -15,12 +15,29 @@ func NewAdStore(db *sqlx.DB) *AdStore {
 	return &AdStore{db: db}
 }
 
+func (s *AdStore) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
+	return s.db.BeginTxx(ctx, nil)
+}
+
 func (s *AdStore) Create(ctx context.Context, c *model.Ad) error {
 	query := `
 	INSERT INTO ads (campaign_id, title, status)
 	VALUES (?, ?, ?)
 	`
 	res, err := s.db.ExecContext(ctx, query, c.CampaignID, c.Title, c.Status)
+	if err != nil {
+		return err
+	}
+	c.ID, _ = res.LastInsertId()
+	return nil
+}
+
+func (s *AdStore) CreateTx(ctx context.Context, tx *sqlx.Tx, c *model.Ad) error {
+	query := `
+	INSERT INTO ads (campaign_id, title, status)
+	VALUES (?, ?, ?)
+	`
+	res, err := tx.ExecContext(ctx, query, c.CampaignID, c.Title, c.Status)
 	if err != nil {
 		return err
 	}
@@ -51,8 +68,24 @@ func (s *AdStore) Update(ctx context.Context, ad *model.Ad) error {
 	return err
 }
 
+func (s *AdStore) UpdateTx(ctx context.Context, tx *sqlx.Tx, ad *model.Ad) error {
+	query := `
+		UPDATE ads
+		SET title = ?, status = ?
+		WHERE id = ?
+	`
+	_, err := tx.ExecContext(ctx, query, ad.Title, ad.Status, ad.ID)
+	return err
+}
+
 func (s *AdStore) Delete(ctx context.Context, id int64) error {
 	query := `DELETE FROM ads WHERE id = ?`
 	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}
+
+func (s *AdStore) DeleteTx(ctx context.Context, tx *sqlx.Tx, id int64) error {
+	query := `DELETE FROM ads WHERE id = ?`
+	_, err := tx.ExecContext(ctx, query, id)
 	return err
 }

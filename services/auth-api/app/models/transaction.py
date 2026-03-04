@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, BigInteger, Integer, Numeric, ForeignKey, String, DateTime
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
@@ -11,3 +12,5 @@ class Transaction(Base):
     amount = Column(Numeric(12, 2), nullable=False)
     type = Column(String(32), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="transactions")

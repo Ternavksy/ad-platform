@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.db.base import Base
 from app.api.auth import get_db
+from app.models import user, balance, transaction, ad, creative, campaign
 
 
 TEST_DATABASE_URL = "sqlite:///:memory:"

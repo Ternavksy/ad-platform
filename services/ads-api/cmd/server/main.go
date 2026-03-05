@@ -27,16 +27,26 @@ func main() {
 	}
 	defer db.Close()
 
+	tarantoolDSN := os.Getenv("TARANTOOL_DSN")
+	if tarantoolDSN == "" {
+		tarantoolDSN = "127.0.0.1:33013"
+	}
+
+	tarantoolStore, err := store.NewTarantoolStore(tarantoolDSN)
+	if err != nil {
+		fmt.Printf("Warning: Failed to connect to Tarantool: %v\n", err)
+		fmt.Println("Continuing without caching...")
+	} else {
+		defer tarantoolStore.Close()
+		fmt.Println("Tarantool cache store initialized successfully")
+	}
+
 	campaignStore := store.NewCampaignStore(db)
-
 	campaignService := service.NewCampaignService(campaignStore)
-
 	campaignHandler := handler.NewCampaignHandler(campaignService)
 
 	adStore := store.NewAdStore(db)
-
 	adService := service.NewAdService(adStore)
-
 	adHandler := handler.NewAdHandler(adService)
 
 	r := gin.New()

@@ -54,6 +54,17 @@ services:
     restart: unless-stopped
     ports:
       - '33013:33013'
+    volumes:
+      - ./scripts/init_tarantool.lua:/etc/tarantool/init.lua:ro
+      - tarantool_data:/var/lib/tarantool
+    environment:
+      TARANTOOL_LOG: /var/lib/tarantool/tarantool.log
+    command: tarantool /etc/tarantool/init.lua
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "33013"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   ads-api:
     build: ../services/ads-api
@@ -148,3 +159,4 @@ volumes:
   clickhouse_data:
   grafana_data:
   prometheus_data:
+  tarantool_data:

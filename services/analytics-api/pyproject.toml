@@ -10,6 +10,10 @@ packages = [{ include = "app" }]
 python = "^3.12"
 fastapi = "^0.128.0"
 uvicorn = "^0.40.0"
+clickhouse-connect = "^0.8.0"
+aioredis = "^2.0.0"
+aio-pika = "^9.0.0"
+pydantic-settings = "^2.13.1"
 
 [build-system]
 requires = ["poetry-core"]

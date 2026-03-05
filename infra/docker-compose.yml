@@ -24,6 +24,15 @@ services:
       - '8123:8123'
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -74,9 +83,13 @@ services:
 
   analytics-api:
     build: ../services/analytics-api
+    env_file:
+      - .env
     depends_on:
-      - clickhouse
-      - rabbitmq
+      clickhouse:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
     ports:
       - '8100:8100'
 

@@ -9,11 +9,12 @@ import (
 )
 
 type AdService struct {
-	store *store.AdStore
+	store    *store.AdStore
+	rabbitmq *RabbitMQService
 }
 
-func NewAdService(s *store.AdStore) *AdService {
-	return &AdService{store: s}
+func NewAdService(s *store.AdStore, rmq *RabbitMQService) *AdService {
+	return &AdService{store: s, rabbitmq: rmq}
 }
 
 func (s *AdService) Create(ctx context.Context, ad *model.Ad) error {
@@ -38,6 +39,12 @@ func (s *AdService) Create(ctx context.Context, ad *model.Ad) error {
 
 	if err = s.store.CreateTx(ctx, tx, ad); err != nil {
 		return fmt.Errorf("failed to create ad: %w", err)
+	}
+
+	if s.rabbitmq != nil {
+		if err := s.rabbitmq.PublishAdCreated(ctx, fmt.Sprintf("%d", ad.ID)); err != nil {
+			log.Printf("Failed to publish ad_created event: %v", err)
+		}
 	}
 
 	return nil
@@ -76,6 +83,12 @@ func (s *AdService) Update(ctx context.Context, ad *model.Ad) error {
 
 	if err = s.store.UpdateTx(ctx, tx, ad); err != nil {
 		return fmt.Errorf("failed to update ad: %w", err)
+	}
+
+	if s.rabbitmq != nil {
+		if err := s.rabbitmq.PublishAdUpdated(ctx, fmt.Sprintf("%d", ad.ID)); err != nil {
+			log.Printf("Failed to publish ad_updated event: %v", err)
+		}
 	}
 
 	return nil

@@ -53,7 +53,7 @@ func TestAdServiceCRUD(t *testing.T) {
 	cid, _ := res.LastInsertId()
 
 	s := store.NewAdStore(db)
-	svc := service.NewAdService(s)
+	svc := service.NewAdService(s, nil)
 
 	ctx := context.Background()
 

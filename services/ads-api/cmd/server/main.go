@@ -41,12 +41,26 @@ func main() {
 		fmt.Println("Tarantool cache store initialized successfully")
 	}
 
+	rabbitmqURL := os.Getenv("RABBITMQ_URL")
+	if rabbitmqURL == "" {
+		rabbitmqURL = "amqp://guest:guest@rabbitmq:5672/"
+	}
+
+	rabbitmqService, err := service.NewRabbitMQService(rabbitmqURL)
+	if err != nil {
+		fmt.Printf("Warning: Failed to connect to RabbitMQ: %v\n", err)
+		fmt.Println("Continuing without message queuing...")
+	} else {
+		defer rabbitmqService.Close()
+		fmt.Println("RabbitMQ service initialized successfully")
+	}
+
 	campaignStore := store.NewCampaignStore(db)
 	campaignService := service.NewCampaignService(campaignStore)
 	campaignHandler := handler.NewCampaignHandler(campaignService)
 
 	adStore := store.NewAdStore(db)
-	adService := service.NewAdService(adStore)
+	adService := service.NewAdService(adStore, rabbitmqService)
 	adHandler := handler.NewAdHandler(adService)
 
 	r := gin.New()

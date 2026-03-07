@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/tarantool/go-tarantool/v2 v2.4.0
 )
 

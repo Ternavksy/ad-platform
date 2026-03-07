@@ -2,6 +2,10 @@ from fastapi import FastAPI, Response
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter
+from app.core.rabbitmq import rabbitmq_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Auth API")
@@ -15,7 +19,12 @@ REQUESTS = Counter('auth_requests_total', 'Total HTTP requests (auth-api)')
 @app.get("/health")
 def health():
     REQUESTS.inc()
-    return {"status": "ok"}
+   
+    if rabbitmq_service.connect():
+        rabbitmq_service.close()
+        return {"status": "ok", "rabbitmq": "connected"}
+    else:
+        return {"status": "ok", "rabbitmq": "disconnected"}
 
 
 @app.get("/metrics")

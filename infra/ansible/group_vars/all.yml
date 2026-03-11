@@ -1,0 +1,102 @@
+---
+#  Глобальные переменные для всех окружений (development / staging / production)
+
+# Project configuration
+project_name: "ad-platform"
+project_version: "1.0.0"
+
+# Environment configuration
+deploy_env: "{{ inventory_hostname in groups['production'] | ternary('production', inventory_hostname in groups['staging'] | ternary('staging', 'development')) }}"
+
+# Docker configuration
+docker_registry: ""
+docker_network_name: "{{ project_name }}-network"
+
+# Application configuration
+app_version: latest
+
+# Database configuration
+database_host: mysql
+database_port: 3306
+database_name: ad_platform
+database_user: "ad_user"
+database_password: "{{ vault_database_password | default('ad_password') }}"
+
+# Redis configuration
+redis_host: "{{ groups['database'] | first }}"
+redis_port: 6379
+redis_password: "{{ vault_redis_password | default('') }}"
+redis_data_dir: "{{ project_base_dir }}/data/redis"
+redis_config_dir: "{{ project_base_dir }}/config/redis"
+
+# RabbitMQ configuration
+rabbitmq_host: "{{ groups['database'] | first }}"
+rabbitmq_port: 5672
+rabbitmq_user: "guest"
+rabbitmq_password: "{{ vault_rabbitmq_password | default('guest') }}"
+
+# ClickHouse configuration
+clickhouse_host: "{{ groups['database'] | first }}"
+clickhouse_port: 8123
+clickhouse_database: ad_platform
+
+# Tarantool configuration
+tarantool_host: "{{ groups['database'] | first }}"
+tarantool_port: 3301
+
+# Monitoring configuration
+monitoring_host: "{{ groups['monitoring'] | first }}"
+prometheus_port: 9090
+grafana_port: 3000
+grafana_admin_user: "admin"
+grafana_admin_password: "{{ vault_grafana_password | default('admin') }}"
+
+# SSL configuration
+ssl_enabled: "{{ deploy_env == 'production' }}"
+ssl_email: "admin@example.com"
+domain_name: "{{ deploy_env == 'production' | ternary('ad-platform.com', deploy_env == 'staging' | ternary('staging.ad-platform.com', 'localhost')) }}"
+
+# Backup configuration
+backup_enabled: "{{ deploy_env != 'development' }}"
+backup_retention_days: "{{ deploy_env == 'production' | ternary(30, deploy_env == 'staging' | ternary(7, 1)) }}"
+
+# Monitoring configuration
+monitoring_enabled: true
+alert_email_enabled: "{{ deploy_env == 'production' }}"
+alert_email_to: "admin@example.com"
+alert_email_from: "monitoring@example.com"
+
+# Security configuration
+firewall_enabled: true
+ssh_key_path: "~/.ssh/id_rsa.pub"
+
+# Application-specific configuration
+debug: "{{ deploy_env == 'development' }}"
+secret_key: "{{ vault_secret_key | default('your-secret-key-here') }}"
+
+# Worker configuration
+worker_go_enabled: true
+worker_py_enabled: true
+
+# Health check configuration
+health_check_enabled: true
+health_check_interval: 120
+
+# Timezone
+timezone: "{{ deploy_env == 'production' | ternary('UTC', 'Europe/Moscow') }}"
+
+# Network configuration
+internal_network_cidr: "192.168.0.0/16"
+external_network_cidr: "0.0.0.0/0"
+
+# Resource limits
+cpu_limit: "{{ deploy_env == 'production' | ternary('4', deploy_env == 'staging' | ternary('2', '1')) }}"
+memory_limit: "{{ deploy_env == 'production' | ternary('8g', deploy_env == 'staging' | ternary('4g', '2g')) }}"
+
+# Logging configuration
+log_retention_days: "{{ deploy_env == 'production' | ternary(30, deploy_env == 'staging' | ternary(7, 1)) }}"
+log_level: "{{ deploy_env == 'production' | ternary('INFO', 'DEBUG') }}"
+
+# Performance configuration
+max_connections: "{{ deploy_env == 'production' | ternary(1000, deploy_env == 'staging' | ternary(500, 100)) }}"
+connection_timeout: "{{ deploy_env == 'production' | ternary(30, 60) }}"

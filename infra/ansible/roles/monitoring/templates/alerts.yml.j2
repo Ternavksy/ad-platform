@@ -1,0 +1,11 @@
+groups:
+  - name: example-alerts
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance down"
+          description: "Prometheus target is down for more than 1 minute."

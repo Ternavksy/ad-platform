@@ -1,0 +1,147 @@
+---
+# настройка переменных для development окружения
+
+# Environment settings
+environment: "development"
+debug: true
+log_level: "DEBUG"
+
+# Database configuration for development
+database_host: "localhost"
+database_port: 3306
+database_name: "ad_platform_dev"
+database_user: "ad_user_dev"
+database_password: "dev_password"
+
+# Redis configuration for development
+redis_host: "localhost"
+redis_port: 6379
+redis_password: ""
+
+# RabbitMQ configuration for development
+rabbitmq_host: "localhost"
+rabbitmq_port: 5672
+rabbitmq_user: "guest"
+rabbitmq_password: "guest"
+
+# ClickHouse configuration for development
+clickhouse_host: "localhost"
+clickhouse_port: 8123
+clickhouse_database: "ad_platform_dev"
+
+# Tarantool configuration for development
+tarantool_host: "localhost"
+tarantool_port: 3301
+
+# Monitoring configuration for development
+monitoring_host: "localhost"
+prometheus_port: 9090
+grafana_port: 3000
+grafana_admin_user: "admin"
+grafana_admin_password: "admin"
+
+# SSL configuration for development
+ssl_enabled: false
+ssl_email: "dev@example.com"
+domain_name: "localhost"
+
+# Backup configuration for development
+backup_enabled: false
+backup_retention_days: 1
+backup_storage_path: "/opt/ad-platform/backups/development"
+
+# Security configuration for development
+firewall_enabled: false
+ssh_key_path: "~/.ssh/id_rsa.pub"
+security_headers_enabled: false
+rate_limiting_enabled: false
+
+# Application configuration for development
+app_version: "latest"
+docker_registry: "localhost:5000"
+docker_network_name: "ad-platform-dev-network"
+
+# Resource limits for development
+cpu_limit: "2"
+memory_limit: "4g"
+max_connections: 100
+connection_timeout: 60
+
+# Performance configuration for development
+enable_caching: false
+cache_ttl: 300
+enable_compression: false
+compression_level: 1
+
+# Monitoring and alerting for development
+monitoring_enabled: true
+alert_email_enabled: false
+alert_email_to: "dev@example.com"
+alert_email_from: "monitoring@example.com"
+alert_smtp_host: "localhost"
+alert_smtp_port: 25
+
+# High availability settings for development
+enable_ha: false
+replica_count: 1
+load_balancer_enabled: false
+health_check_path: "/health"
+
+# Logging configuration for development
+log_retention_days: 7
+log_level: "DEBUG"
+structured_logging: false
+log_format: "text"
+
+# Database optimization for development
+database_max_connections: 20
+database_connection_pool_size: 5
+database_query_timeout: 60
+database_slow_query_log: false
+database_slow_query_threshold: 5000
+
+# Application optimization for development
+app_worker_processes: 1
+app_worker_connections: 100
+app_max_request_size: "1m"
+app_request_timeout: 120
+
+# CDN configuration for development
+cdn_enabled: false
+cdn_domain: "localhost"
+cdn_cache_ttl: 300
+
+# Third-party integrations for development
+external_api_timeout: 60
+external_api_retries: 1
+external_api_rate_limit: 100
+
+# Compliance and auditing for development
+audit_logging_enabled: false
+audit_log_retention_days: 7
+data_retention_policy: "30d"
+gdpr_compliant: false
+
+# Development-specific features
+hot_reload: true
+live_reload: true
+debug_toolbar: true
+profiling_enabled: true
+test_data_generation: true
+
+# Development tools
+enable_swagger: true
+enable_debug_api: true
+enable_metrics_endpoint: true
+enable_health_check: true
+
+# Development database settings
+database_seed_data: true
+database_reset_on_start: false
+database_migrate_on_start: true
+
+# Development monitoring
+enable_profiling: true
+enable_tracing: true
+enable_metrics_collection: true
+metrics_collection_interval: 10

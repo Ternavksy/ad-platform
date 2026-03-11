@@ -1,0 +1,19 @@
+-- Managed by Ansible
+
+box.cfg{
+    listen = {{ tarantool_port | default(3301) }},
+    memtx_memory = 256 * 1024 * 1024,
+    wal_mode = "write",
+    log_level = 5
+}
+
+-- create example space
+box.once("init", function()
+    local space = box.schema.space.create('kv', { if_not_exists = true })
+
+    space:create_index('primary', {
+        type = 'tree',
+        parts = {1, 'string'},
+        if_not_exists = true
+    })
+end)

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Common services for all environments
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - {{ project_config_dir }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - {{ project_config_dir }}/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - {{ project_config_dir }}/nginx/ssl:/etc/letsencrypt
+      - {{ project_config_dir }}/nginx/conf.d:/etc/nginx/conf.d
+    command: certonly --webroot --webroot-path=/var/www/certbot --email {{ ssl_email | default('admin@example.com') }} --agree-tos --no-eff-email -d {{ domain_name | default('localhost') }}
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+
+networks:
+  {{ project_name | default('ad-platform') }}-network:
+    driver: bridge

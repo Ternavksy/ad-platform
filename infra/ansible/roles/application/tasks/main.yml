@@ -1,0 +1,197 @@
+---
+#  Основные задачи для развёртывания приложения
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+  loop:
+    - "{{ application_base_dir }}"
+    - "{{ application_logs_dir }}"
+    - "{{ application_config_dir }}"
+    - "{{ application_data_dir }}"
+
+- name: Create application environment file
+  template:
+    src: .env.j2
+    dest: "{{ application_config_dir }}/.env"
+    mode: '0644'
+
+- name: Create Docker Compose file for application
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ application_config_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: Create Nginx configuration
+  template:
+    src: nginx.conf.j2
+    dest: "{{ application_config_dir }}/nginx.conf"
+    mode: '0644'
+  notify: Restart Nginx
+
+- name: Create Nginx Docker Compose file
+  template:
+    src: docker-compose.nginx.yml.j2
+    dest: "{{ application_config_dir }}/docker-compose.nginx.yml"
+    mode: '0644'
+
+- name: Create application configuration files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ application_config_dir }}/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: 'auth-api-config.yml.j2', dest: 'auth-api-config.yml' }
+    - { src: 'ads-api-config.yml.j2', dest: 'ads-api-config.yml' }
+    - { src: 'analytics-api-config.yml.j2', dest: 'analytics-api-config.yml' }
+    - { src: 'admin-panel-config.yml.j2', dest: 'admin-panel-config.yml' }
+
+- name: Create worker configuration files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ application_config_dir }}/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: 'worker-go-config.yml.j2', dest: 'worker-go-config.yml' }
+    - { src: 'worker-py-config.yml.j2', dest: 'worker-py-config.yml' }
+
+- name: Deploy application services
+  command: docker-compose -f {{ application_config_dir }}/docker-compose.yml up -d
+  args:
+    chdir: "{{ application_config_dir }}"
+
+- name: Deploy Nginx
+  command: docker-compose -f {{ application_config_dir }}/docker-compose.nginx.yml up -d
+  args:
+    chdir: "{{ application_config_dir }}"
+
+- name: Wait for application services to be ready
+  wait_for:
+    host: "{{ application_host }}"
+    port: "{{ item }}"
+    delay: 10
+    timeout: 120
+  loop:
+    - 8080  # Auth API
+    - 8081  # Ads API
+    - 8082  # Analytics API
+    - 8083  # Admin Panel
+    - 80    # Nginx
+
+- name: Run database migrations
+  command: docker exec -i auth-api-container alembic upgrade head
+  when: run_migrations | default(true)
+
+- name: Create application users
+  command: docker exec -i auth-api-container python -c "from app.models.user import User; from app.db.session import SessionLocal; db = SessionLocal(); user = User(username='{{ item.username }}', email='{{ item.email }}'); user.set_password('{{ item.password }}'); db.add(user); db.commit(); db.close()"
+  loop: "{{ application_users | default([]) }}"
+  when: application_users is defined
+
+- name: Configure application monitoring
+  template:
+    src: application_monitoring.sh.j2
+    dest: "{{ application_config_dir }}/application_monitoring.sh"
+    mode: '0755'
+
+- name: Create application monitoring cron job
+  cron:
+    name: "Application monitoring"
+    minute: "*/5"
+    job: "{{ application_config_dir }}/application_monitoring.sh"
+    user: "{{ ansible_user }}"
+  when: application_monitoring_enabled | default(false)
+
+- name: Configure application logging
+  template:
+    src: logrotate.conf.j2
+    dest: "/etc/logrotate.d/ad-platform"
+    mode: '0644'
+  when: ansible_os_family != "Darwin"
+
+- name: Create log rotation cron job
+  become: true
+  cron:
+    name: "Log rotation"
+    minute: "0"
+    hour: "0"
+    job: "logrotate -f /etc/logrotate.d/ad-platform"
+    user: "root"
+
+- name: Configure SSL certificates
+  template:
+    src: ssl-certificates.sh.j2
+    dest: "{{ application_config_dir }}/ssl-certificates.sh"
+    mode: '0755'
+  when: ssl_enabled | default(false)
+
+- name: Run SSL certificate setup
+  command: "{{ application_config_dir }}/ssl-certificates.sh"
+  when: ssl_enabled | default(false)
+
+- name: Create application health check script
+  template:
+    src: health-check.sh.j2
+    dest: "{{ application_config_dir }}/health-check.sh"
+    mode: '0755'
+
+- name: Create health check cron job
+  cron:
+    name: "Application health check"
+    minute: "*/2"
+    job: "{{ application_config_dir }}/health-check.sh"
+    user: "{{ ansible_user }}"
+
+- name: Configure application backups
+  template:
+    src: backup_application.sh.j2
+    dest: "{{ application_config_dir }}/backup_application.sh"
+    mode: '0755'
+
+- name: Create application backup cron job
+  cron:
+    name: "Application backup"
+    minute: "0"
+    hour: "3"
+    job: "{{ application_config_dir }}/backup_application.sh"
+    user: "{{ ansible_user }}"
+  when: application_backup_enabled | default(false)
+
+- name: Set up application firewall rules
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 80
+    - 443
+    - 8080
+    - 8081
+    - 8082
+    - 8083
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW for application
+  ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Configure application firewall (RHEL/CentOS)
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+  loop:
+    - 80
+    - 443
+    - 8080
+    - 8081
+    - 8082
+    - 8083
+  when: ansible_os_family == "RedHat"
+
+- name: Reload firewalld for application
+  command: firewall-cmd --reload
+  when: ansible_os_family == "RedHat"

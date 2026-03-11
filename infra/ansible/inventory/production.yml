@@ -1,0 +1,45 @@
+---
+all:
+  children:
+    production:
+      hosts:
+        app-server-01:
+          ansible_host: 192.168.1.10
+          ansible_user: deploy
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        app-server-02:
+          ansible_host: 192.168.1.11
+          ansible_user: deploy
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        db-server:
+          ansible_host: 192.168.1.20
+          ansible_user: deploy
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        monitoring-server:
+          ansible_host: 192.168.1.30
+          ansible_user: deploy
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+      vars:
+        environment: production
+        docker_registry: registry.example.com
+        app_version: "1.0.0"
+        
+    staging:
+      hosts:
+        staging-server:
+          ansible_host: 192.168.1.40
+          ansible_user: deploy
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+      vars:
+        environment: staging
+        docker_registry: registry.example.com
+        app_version: "latest"
+        
+    development:
+      hosts:
+        localhost:
+          ansible_connection: local
+      vars:
+        environment: development
+        docker_registry: localhost:5000
+        app_version: "latest"

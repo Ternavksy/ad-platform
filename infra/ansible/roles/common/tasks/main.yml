@@ -1,0 +1,145 @@
+---
+# Common tasks for all environments
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install common packages
+  package:
+    name:
+      - curl
+      - wget
+      - git
+      - htop
+      - vim
+      - unzip
+      - apt-transport-https
+      - ca-certificates
+      - gnupg-agent
+      - software-properties-common
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install common packages (RHEL/CentOS)
+  package:
+    name:
+      - curl
+      - wget
+      - git
+      - htop
+      - vim
+      - unzip
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add Docker repository
+  apt_repository:
+    repo: deb https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install Docker
+  package:
+    name: docker-ce
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Docker (RHEL/CentOS)
+  yum:
+    name: docker-ce
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  when: ansible_os_family != "Darwin"
+
+- name: Add user to docker group
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+  when: ansible_os_family != "Darwin"
+
+- name: Install Docker Compose
+  get_url:
+    url: https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+  when: ansible_os_family != "Darwin"
+
+- name: Create project directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+  loop:
+    - "{{ project_base_dir }}"
+    - "{{ project_logs_dir }}"
+    - "{{ project_data_dir }}"
+    - "{{ project_config_dir }}"
+
+- name: Set timezone
+  timezone:
+    name: "{{ timezone | default('UTC') }}"
+  when: ansible_os_family != "Darwin"
+
+- name: Configure SSH key-based authentication
+  authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ lookup('file', ssh_public_key_path) }}"
+  when: ssh_public_key_path is defined
+
+- name: Configure firewall (UFW)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 22
+    - 80
+    - 443
+    - 8080
+    - 9090
+    - 3000
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Configure firewall (firewalld)
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+  loop:
+    - 22
+    - 80
+    - 443
+    - 8080
+    - 9090
+    - 3000
+  when: ansible_os_family == "RedHat"
+
+- name: Reload firewalld
+  command: firewall-cmd --reload
+  when: ansible_os_family == "RedHat"

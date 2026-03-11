@@ -1,0 +1,28 @@
+# Managed by Ansible
+
+server:
+  host: 0.0.0.0
+  port: 8001
+
+database:
+  host: {{ database_host }}
+  port: {{ database_port }}
+  name: {{ database_name }}
+  user: {{ database_user }}
+  password: {{ database_password }}
+
+redis:
+  host: {{ redis_host }}
+  port: {{ redis_port }}
+
+rabbitmq:
+  host: {{ rabbitmq_host }}
+  port: {{ rabbitmq_port }}
+  user: {{ rabbitmq_user }}
+  password: {{ rabbitmq_password }}
+
+security:
+  secret_key: {{ secret_key }}
+
+logging:
+  level: "{{ log_level }}"

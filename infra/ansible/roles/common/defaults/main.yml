@@ -1,0 +1,52 @@
+---
+# Default variables for common role
+
+# Timezone configuration
+timezone: "UTC"
+
+# SSH key path
+ssh_public_key_path: "~/.ssh/id_rsa.pub"
+
+# Docker configuration
+docker_version: "latest"
+docker_compose_version: "2.20.2"
+
+# Project directories
+project_base_dir: "/opt/ad-platform"
+project_logs_dir: "{{ project_base_dir }}/logs"
+project_data_dir: "{{ project_base_dir }}/data"
+project_config_dir: "{{ project_base_dir }}/config"
+
+# Firewall configuration
+firewall_enabled: true
+allowed_ports:
+  - 22
+  - 80
+  - 443
+  - 8080
+  - 9090
+  - 3000
+
+# Common packages
+common_packages_debian:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - unzip
+  - apt-transport-https
+  - ca-certificates
+  - gnupg-agent
+  - software-properties-common
+
+common_packages_redhat:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - unzip
+  - yum-utils
+  - device-mapper-persistent-data
+  - lvm2

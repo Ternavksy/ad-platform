@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Managed by Ansible
+
+LOG_FILE="{{ database_logs_dir }}/database_monitoring.log"
+DATE=$(date "+%Y-%m-%d %H:%M:%S")
+
+echo "[$DATE] Starting database monitoring check..." >> $LOG_FILE
+
+# -------------------------
+# MySQL
+# -------------------------
+if docker ps | grep -q mysql; then
+    echo "[$DATE] MySQL container is running" >> $LOG_FILE
+else
+    echo "[$DATE] ERROR: MySQL container is not running" >> $LOG_FILE
+fi
+
+# -------------------------
+# ClickHouse
+# -------------------------
+if docker ps | grep -q clickhouse; then
+    echo "[$DATE] ClickHouse container is running" >> $LOG_FILE
+else
+    echo "[$DATE] ERROR: ClickHouse container is not running" >> $LOG_FILE
+fi
+
+# -------------------------
+# Tarantool
+# -------------------------
+if docker ps | grep -q tarantool; then
+    echo "[$DATE] Tarantool container is running" >> $LOG_FILE
+else
+    echo "[$DATE] ERROR: Tarantool container is not running" >> $LOG_FILE
+fi
+
+# -------------------------
+# RabbitMQ
+# -------------------------
+if docker ps | grep -q rabbitmq; then
+    echo "[$DATE] RabbitMQ container is running" >> $LOG_FILE
+else
+    echo "[$DATE] ERROR: RabbitMQ container is not running" >> $LOG_FILE
+fi
+
+echo "[$DATE] Monitoring check completed." >> $LOG_FILE
+echo "" >> $LOG_FILE

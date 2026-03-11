@@ -1,0 +1,13 @@
+# Managed by Ansible
+
+listeners.tcp.default = {{ rabbitmq_port | default(5672) }}
+
+management.tcp.port = {{ rabbitmq_management_port | default(15672) }}
+
+loopback_users = none
+
+default_user = {{ rabbitmq_user | default("admin") }}
+default_pass = {{ rabbitmq_password | default("admin") }}
+
+log.console = true
+log.console.level = info

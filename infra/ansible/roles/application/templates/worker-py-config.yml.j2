@@ -1,0 +1,19 @@
+# Managed by Ansible
+
+worker:
+  name: python-worker
+  concurrency: 3
+
+rabbitmq:
+  host: {{ rabbitmq_host }}
+  port: {{ rabbitmq_port }}
+  user: {{ rabbitmq_user }}
+  password: {{ rabbitmq_password }}
+
+clickhouse:
+  host: {{ clickhouse_host }}
+  port: {{ clickhouse_port }}
+  database: {{ clickhouse_database }}
+
+logging:
+  level: {{ log_level }}

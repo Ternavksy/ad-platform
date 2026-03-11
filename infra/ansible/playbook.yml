@@ -1,0 +1,316 @@
+---
+# Основной playbook Ansible для деплоя инфраструктуры Ad Platform
+
+- name: Deploy Ad Platform Infrastructure
+  hosts: all
+  become: false
+  gather_facts: true
+  
+  vars:
+    # Project configuration
+    project_name: "ad-platform"
+    project_version: "1.0.0"
+    
+    # Environment detection
+    environment: "{{ inventory_hostname in groups['production'] | ternary('production', inventory_hostname in groups['staging'] | ternary('staging', 'development')) }}"
+    
+    # Common variables
+    docker_registry: local
+    app_version: latest
+    
+    # Directory paths
+    project_base_dir: "{{ ansible_env.HOME }}/{{ project_name }}"
+    project_logs_dir: "{{ project_base_dir }}/logs"
+    project_config_dir: "{{ project_base_dir }}/config"
+    project_data_dir: "{{ project_base_dir }}/data"
+    
+    # Database configuration
+    database_host: mysql
+    database_port: 3306
+    database_name: ad_platform
+    database_user: "ad_user"
+    database_password: "{{ vault_database_password | default('ad_password') }}"
+    
+    # Redis configuration
+    redis_host: redis
+    redis_port: 6379
+    redis_password: "{{ vault_redis_password | default('') }}"
+    
+    # RabbitMQ configuration
+    rabbitmq_host: rabbitmq
+    rabbitmq_port: 5672
+    rabbitmq_user: "guest"
+    rabbitmq_password: "{{ vault_rabbitmq_password | default('guest') }}"
+    
+    # ClickHouse configuration
+    clickhouse_host: "{{ groups['database'] | first }}"
+    clickhouse_port: 8123
+    clickhouse_database: "{{ project_name }}"
+    
+    # Tarantool configuration
+    tarantool_host: "{{ groups['database'] | first }}"
+    tarantool_port: 3301
+    
+    # Monitoring configuration
+    monitoring_host: "{{ groups['monitoring'] | first }}"
+    prometheus_port: 9090
+    grafana_port: 3000
+    grafana_admin_user: "admin"
+    grafana_admin_password: "{{ vault_grafana_password | default('admin') }}"
+    
+    # SSL configuration
+    ssl_enabled: "{{ environment == 'production' }}"
+    ssl_email: "admin@example.com"
+    domain_name: "{{ environment == 'production' | ternary('ad-platform.com', environment == 'staging' | ternary('staging.ad-platform.com', 'localhost')) }}"
+    
+    # Backup configuration
+    backup_enabled: "{{ environment != 'development' }}"
+    backup_retention_days: "{{ environment == 'production' | ternary(30, environment == 'staging' | ternary(7, 1)) }}"
+    
+    # Monitoring configuration
+    monitoring_enabled: true
+    alert_email_enabled: "{{ environment == 'production' }}"
+    alert_email_to: "admin@example.com"
+    alert_email_from: "monitoring@example.com"
+    
+    # Security configuration
+    firewall_enabled: true
+    ssh_key_path: "~/.ssh/id_rsa.pub"
+    
+    # Application-specific configuration
+    debug: "{{ environment == 'development' }}"
+    log_level: "{{ environment == 'production' | ternary('INFO', 'DEBUG') }}"
+    secret_key: "{{ vault_secret_key | default('your-secret-key-here') }}"
+    
+    # Worker configuration
+    worker_go_enabled: true
+    worker_py_enabled: true
+    
+    # Health check configuration
+    health_check_enabled: true
+    health_check_interval: 120
+    
+    # Timezone
+    timezone: "{{ environment == 'production' | ternary('UTC', 'Europe/Moscow') }}"
+    
+    # Network configuration
+    internal_network_cidr: "192.168.0.0/16"
+    external_network_cidr: "0.0.0.0/0"
+    
+    # Resource limits
+    cpu_limit: "{{ environment == 'production' | ternary('4', environment == 'staging' | ternary('2', '1')) }}"
+    memory_limit: "{{ environment == 'production' | ternary('8g', environment == 'staging' | ternary('4g', '2g')) }}"
+    
+    # Logging configuration
+    log_retention_days: "{{ environment == 'production' | ternary(30, environment == 'staging' | ternary(7, 1)) }}"
+    log_level: "{{ environment == 'production' | ternary('INFO', 'DEBUG') }}"
+    
+    # Performance configuration
+    max_connections: "{{ environment == 'production' | ternary(1000, environment == 'staging' | ternary(500, 100)) }}"
+    connection_timeout: "{{ environment == 'production' | ternary(30, 60) }}"
+
+  pre_tasks:
+    - name: Display environment information
+      debug:
+        msg: |
+          Environment: {{ environment }}
+          Project: {{ project_name }}
+          Version: {{ project_version }}
+          Host: {{ inventory_hostname }}
+          OS Family: {{ ansible_os_family }}
+          OS Distribution: {{ ansible_distribution }}
+
+    - name: Create project directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user }}"
+      loop:
+        - "{{ project_base_dir }}"
+        - "{{ project_logs_dir }}"
+        - "{{ project_config_dir }}"
+        - "{{ project_data_dir }}"
+
+    - name: Create Docker network
+      docker_network:
+        name: "{{ docker_network_name }}"
+        driver: bridge
+        state: present
+      when: inventory_hostname in groups['application'] or inventory_hostname in groups['database'] or inventory_hostname in groups['monitoring']
+
+  roles:
+    - role: common
+      when: inventory_hostname in groups['application'] or inventory_hostname in groups['database'] or inventory_hostname in groups['monitoring']
+
+    - role: database
+      when: inventory_hostname in groups['database']
+
+    - role: application
+      when: inventory_hostname in groups['application']
+
+    - role: monitoring
+      when: inventory_hostname in groups['monitoring']
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          Deployment completed successfully!
+          Environment: {{ environment }}
+          Project: {{ project_name }}
+          Services deployed on: {{ inventory_hostname }}
+          
+          Application URLs:
+          {% if inventory_hostname in groups['application'] %}
+          - Auth API: http://{{ inventory_hostname }}:8080
+          - Ads API: http://{{ inventory_hostname }}:8081
+          - Analytics API: http://{{ inventory_hostname }}:8082
+          - Admin Panel: http://{{ inventory_hostname }}:8083
+          {% endif %}
+          
+          {% if inventory_hostname in groups['monitoring'] %}
+          Monitoring URLs:
+          - Prometheus: http://{{ inventory_hostname }}:9090
+          - Grafana: http://{{ inventory_hostname }}:3000
+          {% endif %}
+
+    - name: Run health checks
+      uri:
+        url: "http://{{ inventory_hostname }}:{{ item }}"
+        method: GET
+        status_code: 200
+        timeout: 10
+        retries: 10
+        delay: 5
+      loop:
+        - 8080
+        - 8081
+        - 8082
+        - 8083
+      when: inventory_hostname in groups['application']
+      ignore_errors: true
+
+    - name: Display next steps
+      debug:
+        msg: |
+          Next steps:
+          1. Verify all services are running: docker ps
+          2. Check application logs: docker logs <container_name>
+          3. Access monitoring dashboards if deployed
+          4. Run database migrations if needed
+          5. Configure SSL certificates if in production
+
+# Separate play for database initialization
+- name: Initialize Database
+  hosts: database
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Wait for database services to be ready
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ item }}"
+        delay: 10
+        timeout: 120
+      loop:
+        - 3306  # MySQL
+        - 3301  # Tarantool
+        - 8123  # ClickHouse
+        - 5672  # RabbitMQ
+
+    - name: Run database migrations
+      command: docker exec -i auth-api-container alembic upgrade head
+      when: run_migrations | default(true)
+      ignore_errors: true
+
+    - name: Create initial application users
+      command: docker exec -i auth-api-container python -c "from app.models.user import User; from app.db.session import SessionLocal; db = SessionLocal(); user = User(username='{{ item.username }}', email='{{ item.email }}'); user.set_password('{{ item.password }}'); db.add(user); db.commit(); db.close()"
+      loop: "{{ application_users | default([]) }}"
+      when: application_users is defined
+      ignore_errors: true
+
+# Separate play for monitoring configuration
+- name: Configure Monitoring
+  hosts: monitoring
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Wait for monitoring services to be ready
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ item }}"
+        delay: 10
+        timeout: 120
+      loop:
+        - 9090  # Prometheus
+        - 3000  # Grafana
+        - 9100  # Node Exporter
+        - 9093  # AlertManager
+
+    - name: Configure Grafana datasources
+      uri:
+        url: "http://{{ grafana_admin_user }}:{{ grafana_admin_password }}@{{ inventory_hostname }}:{{ grafana_port }}/api/datasources"
+        method: POST
+        body: "{{ lookup('file', monitoring_config_dir + '/datasources.json') }}"
+        body_format: json
+        status_code: 200
+        timeout: 30
+      when: monitoring_enabled
+      ignore_errors: true
+
+    - name: Import Grafana dashboards
+      uri:
+        url: "http://{{ grafana_admin_user }}:{{ grafana_admin_password }}@{{ inventory_hostname }}:{{ grafana_port }}/api/dashboards/db"
+        method: POST
+        body: "{{ lookup('file', monitoring_config_dir + '/dashboards/' + item) }}"
+        body_format: json
+        status_code: 200
+        timeout: 30
+      loop: "{{ monitoring_config_dir }}/dashboards/*.json"
+      when: monitoring_enabled
+      ignore_errors: true
+
+# Separate play for application deployment
+- name: Deploy Application Services
+  hosts: application
+  become: true
+  gather_facts: false
+  
+  tasks:
+    - name: Wait for application services to be ready
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ item }}"
+        delay: 10
+        timeout: 120
+      loop:
+        - 8080  # Auth API
+        - 8081  # Ads API
+        - 8082  # Analytics API
+        - 8083  # Admin Panel
+        - 80    # Nginx
+
+    - name: Run application health checks
+      uri:
+        url: "http://{{ inventory_hostname }}:{{ item }}/health"
+        method: GET
+        status_code: 200
+        timeout: 10
+      loop:
+        - 8080
+        - 8081
+        - 8082
+        - 8083
+      ignore_errors: true
+
+    - name: Display application status
+      debug:
+        msg: |
+          Application services deployed successfully on {{ inventory_hostname }}
+          - Auth API: http://{{ inventory_hostname }}:8080
+          - Ads API: http://{{ inventory_hostname }}:8081
+          - Analytics API: http://{{ inventory_hostname }}:8082
+          - Admin Panel: http://{{ inventory_hostname }}:8083

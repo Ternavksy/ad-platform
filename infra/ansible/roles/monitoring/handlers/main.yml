@@ -1,0 +1,21 @@
+---
+- name: Restart Prometheus
+  docker_container:
+    name: prometheus
+    state: started
+    restart: yes
+
+- name: Restart Grafana
+  docker_container:
+    name: grafana
+    state: started
+    restart: yes
+
+- name: Restart AlertManager
+  command: docker restart alertmanager
+  ignore_errors: true
+
+- name: Restart Rsyslog
+  service:
+    name: rsyslog
+    state: restarted

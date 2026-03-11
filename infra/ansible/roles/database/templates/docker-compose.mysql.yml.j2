@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:{{ mysql_version }}
+    container_name: mysql-container
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: {{ mysql_root_password }}
+      MYSQL_DATABASE: {{ database_name }}
+      MYSQL_USER: {{ database_user }}
+      MYSQL_PASSWORD: {{ database_password }}
+    ports:
+      - "{{ database_port }}:3306"
+    volumes:
+      - {{ mysql_data_dir }}:/var/lib/mysql
+      - {{ mysql_config_dir }}/mysql.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf:ro
+      - {{ mysql_logs_dir }}:/var/log/mysql
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    command: --default-authentication-plugin=mysql_native_password
+
+networks:
+  {{ project_name | default('ad-platform') }}-network:
+    external: true

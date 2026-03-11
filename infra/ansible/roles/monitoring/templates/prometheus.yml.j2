@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+
+  - job_name: 'auth-api'
+    static_configs:
+      - targets: ['localhost:8080']
+
+  - job_name: 'ads-api'
+    static_configs:
+      - targets: ['localhost:8081']
+
+  - job_name: 'analytics-api'
+    static_configs:
+      - targets: ['localhost:8082']
+
+  - job_name: 'admin-panel'
+    static_configs:
+      - targets: ['localhost:8083']

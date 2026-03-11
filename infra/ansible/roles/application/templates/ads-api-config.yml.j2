@@ -1,0 +1,28 @@
+# Managed by Ansible
+
+server:
+  host: 0.0.0.0
+  port: 8002
+
+database:
+  host: {{ database_host }}
+  port: {{ database_port }}
+  name: {{ database_name }}
+  user: {{ database_user }}
+  password: {{ database_password }}
+
+clickhouse:
+  host: {{ clickhouse_host }}
+  port: {{ clickhouse_port }}
+  database: {{ clickhouse_database }}
+
+tarantool:
+  host: {{ tarantool_host }}
+  port: {{ tarantool_port }}
+
+rabbitmq:
+  host: {{ rabbitmq_host }}
+  port: {{ rabbitmq_port }}
+
+logging:
+  level: {{ log_level }}

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+
+    ports:
+      - "{{ rabbitmq_port | default(5672) }}:5672"
+      - "{{ rabbitmq_management_port | default(15672) }}:15672"
+
+    volumes:
+      - {{ project_data_dir }}/databases/rabbitmq:/var/lib/rabbitmq
+      - {{ project_config_dir }}/databases/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+      - {{ project_logs_dir }}/databases/rabbitmq:/var/log/rabbitmq
+
+    networks:
+      - ad-platform-network
+
+networks:
+  ad-platform-network:
+    external: true

@@ -1,0 +1,62 @@
+---
+# Default variables for database role
+
+# Database configuration
+database_host: "localhost"
+database_port: 3306
+database_name: "ad_platform"
+database_user: "ad_user"
+database_password: "ad_password"
+
+# MySQL configuration
+mysql_version: "8.0"
+mysql_root_password: "root_password"
+mysql_data_dir: "{{ database_data_dir }}/mysql"
+mysql_logs_dir: "{{ database_logs_dir }}/mysql"
+mysql_config_dir: "{{ database_config_dir }}/mysql"
+
+# Tarantool configuration
+tarantool_version: "3.1"
+tarantool_data_dir: "{{ database_data_dir }}/tarantool"
+tarantool_logs_dir: "{{ database_logs_dir }}/tarantool"
+tarantool_config_dir: "{{ database_config_dir }}/tarantool"
+
+# ClickHouse configuration
+clickhouse_version: "23.3"
+clickhouse_data_dir: "{{ database_data_dir }}/clickhouse"
+clickhouse_logs_dir: "{{ database_logs_dir }}/clickhouse"
+clickhouse_config_dir: "{{ database_config_dir }}/clickhouse"
+
+# RabbitMQ configuration
+rabbitmq_version: "3.12"
+rabbitmq_data_dir: "{{ database_data_dir }}/rabbitmq"
+rabbitmq_logs_dir: "{{ database_logs_dir }}/rabbitmq"
+rabbitmq_config_dir: "{{ database_config_dir }}/rabbitmq"
+rabbitmq_ha_enabled: false
+rabbitmq_users: []
+rabbitmq_vhosts: []
+
+# Directory paths
+database_data_dir: "{{ project_data_dir }}/databases"
+database_logs_dir: "{{ project_logs_dir }}/databases"
+database_config_dir: "{{ project_config_dir }}/databases"
+
+# Backup configuration
+database_backup_enabled: true
+database_backup_dir: "{{ database_data_dir }}/backups"
+database_backup_retention_days: 7
+
+# Monitoring configuration
+database_monitoring_enabled: true
+database_monitoring_interval: 300
+
+# Database initialization
+mysql_init_script: "init_mysql.sql"
+tarantool_init_script: "init_tarantool.lua"
+clickhouse_init_script: "init_clickhouse.sql"
+
+# Database connection settings
+mysql_connection_timeout: 30
+tarantool_connection_timeout: 10
+clickhouse_connection_timeout: 60
+rabbitmq_connection_timeout: 30

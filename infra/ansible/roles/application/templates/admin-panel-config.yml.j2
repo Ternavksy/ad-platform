@@ -1,0 +1,17 @@
+# Managed by Ansible
+
+server:
+  host: 0.0.0.0
+  port: 8004
+
+auth_api:
+  url: http://auth-api:8001
+
+ads_api:
+  url: http://ads-api:8002
+
+analytics_api:
+  url: http://analytics-api:8003
+
+logging:
+  level: {{ log_level }}

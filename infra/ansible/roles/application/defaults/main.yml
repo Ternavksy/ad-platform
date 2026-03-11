@@ -1,0 +1,94 @@
+---
+# Переменные для роли application
+
+# Application configuration
+application_name: "ad-platform"
+application_version: "1.0.0"
+application_host: "localhost"
+application_port: 8080
+
+# Directory paths
+application_base_dir: "{{ project_base_dir }}/application"
+application_logs_dir: "{{ project_logs_dir }}/application"
+application_config_dir: "{{ project_config_dir }}/application"
+application_data_dir: "{{ project_data_dir }}/application"
+
+# Application services configuration
+auth_api_port: 8080
+ads_api_port: 8081
+analytics_api_port: 8082
+admin_panel_port: 8083
+
+# Database connection settings
+database_host: "localhost"
+database_port: 3306
+database_name: "ad_platform"
+database_user: "ad_user"
+database_password: "ad_password"
+
+# Redis configuration
+redis_host: "localhost"
+redis_port: 6379
+redis_password: ""
+
+# RabbitMQ configuration
+rabbitmq_host: "localhost"
+rabbitmq_port: 5672
+rabbitmq_user: "guest"
+rabbitmq_password: "guest"
+
+# ClickHouse configuration
+clickhouse_host: "localhost"
+clickhouse_port: 8123
+clickhouse_database: "ad_platform"
+
+# Tarantool configuration
+tarantool_host: "localhost"
+tarantool_port: 3301
+
+# SSL configuration
+ssl_enabled: false
+ssl_cert_path: "/etc/ssl/certs/ad-platform.crt"
+ssl_key_path: "/etc/ssl/private/ad-platform.key"
+
+# Monitoring configuration
+application_monitoring_enabled: true
+application_monitoring_interval: 300
+
+# Backup configuration
+application_backup_enabled: true
+application_backup_dir: "{{ application_data_dir }}/backups"
+application_backup_retention_days: 7
+
+# Health check configuration
+health_check_enabled: true
+health_check_interval: 120
+
+# Application users
+application_users: []
+
+# Environment variables
+environment_variables:
+  DEBUG: "false"
+  LOG_LEVEL: "INFO"
+  SECRET_KEY: "your-secret-key-here"
+
+# Docker configuration
+docker_registry: "localhost:5000"
+docker_network_name: "ad-platform-network"
+
+# Nginx configuration
+nginx_enabled: true
+nginx_port: 80
+nginx_ssl_port: 443
+nginx_config_path: "{{ application_config_dir }}/nginx.conf"
+
+# Worker configuration
+worker_go_enabled: true
+worker_py_enabled: true
+worker_go_config_path: "{{ application_config_dir }}/worker-go-config.yml"
+worker_py_config_path: "{{ application_config_dir }}/worker-py-config.yml"
+
+# Migration configuration
+run_migrations: true
+migration_timeout: 300

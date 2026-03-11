@@ -1,0 +1,51 @@
+-- Managed by Ansible
+-- ClickHouse initialization script
+
+CREATE DATABASE IF NOT EXISTS ad_platform;
+
+USE ad_platform;
+
+-- Table for ad events
+CREATE TABLE IF NOT EXISTS ad_events
+(
+    id UInt64,
+    user_id UInt64,
+    ad_id UInt64,
+    event_type String,
+    created_at DateTime
+)
+ENGINE = MergeTree()
+ORDER BY (ad_id, created_at);
+
+-- Table for ad impressions
+CREATE TABLE IF NOT EXISTS ad_impressions
+(
+    id UInt64,
+    ad_id UInt64,
+    user_id UInt64,
+    impression_time DateTime
+)
+ENGINE = MergeTree()
+ORDER BY (ad_id, impression_time);
+
+-- Table for ad clicks
+CREATE TABLE IF NOT EXISTS ad_clicks
+(
+    id UInt64,
+    ad_id UInt64,
+    user_id UInt64,
+    click_time DateTime
+)
+ENGINE = MergeTree()
+ORDER BY (ad_id, click_time);
+
+-- Table for aggregated ad statistics
+CREATE TABLE IF NOT EXISTS ad_stats
+(
+    ad_id UInt64,
+    impressions UInt64,
+    clicks UInt64,
+    updated_at DateTime
+)
+ENGINE = SummingMergeTree()
+ORDER BY ad_id;

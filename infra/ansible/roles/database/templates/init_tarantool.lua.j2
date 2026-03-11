@@ -1,0 +1,51 @@
+-- Tarantool initialization script
+-- Managed by Ansible
+
+box.cfg{
+    listen = {{ tarantool_port | default(3301) }},
+    memtx_memory = 256 * 1024 * 1024,
+    wal_mode = "write",
+    log_level = 5
+}
+
+-- Create spaces and indexes once
+box.once("init_schema", function()
+
+    -- Example key-value space
+    local kv = box.schema.space.create("kv", { if_not_exists = true })
+
+    kv:create_index("primary", {
+        type = "tree",
+        parts = {1, "string"},
+        if_not_exists = true
+    })
+
+    -- Example events space
+    local events = box.schema.space.create("events", { if_not_exists = true })
+
+    events:format({
+        { name = "id", type = "unsigned" },
+        { name = "type", type = "string" },
+        { name = "payload", type = "string" },
+        { name = "created_at", type = "unsigned" }
+    })
+
+    events:create_index("primary", {
+        type = "tree",
+        parts = {"id"},
+        if_not_exists = true
+    })
+
+    events:create_index("type", {
+        type = "tree",
+        parts = {"type"},
+        unique = false,
+        if_not_exists = true
+    })
+
+end)
+
+-- Simple function example
+function ping()
+    return "pong"
+end

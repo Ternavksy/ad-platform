@@ -1,0 +1,21 @@
+#!/bin/bash
+
+echo "Checking application services..."
+
+services=(
+  "http://localhost:8080/health"
+  "http://localhost:8081/health"
+  "http://localhost:8082/health"
+  "http://localhost:8083/health"
+)
+
+for service in "${services[@]}"
+do
+  status=$(curl -s -o /dev/null -w "%{http_code}" $service)
+
+  if [ "$status" -ne 200 ]; then
+    echo "Service $service is DOWN"
+  else
+    echo "Service $service is OK"
+  fi
+done

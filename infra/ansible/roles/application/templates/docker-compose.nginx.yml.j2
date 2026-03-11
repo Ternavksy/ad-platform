@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+
+  nginx:
+    image: nginx:1.25
+    container_name: nginx
+    restart: always
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - {{ project_config_dir }}/application/nginx.conf:/etc/nginx/nginx.conf:ro
+      - {{ project_logs_dir }}/application/nginx:/var/log/nginx
+
+    networks:
+      - {{ docker_network_name }}
+
+networks:
+  {{ docker_network_name }}:
+    external: true

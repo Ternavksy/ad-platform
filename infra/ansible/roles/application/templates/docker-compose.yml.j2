@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # Auth API Service
+  auth-api:
+    image: auth-api:{{ app_version }}
+    container_name: auth-api-container
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=mysql+pymysql://{{ database_user }}:{{ database_password }}@{{ database_host }}:{{ database_port }}/{{ database_name }}
+      - REDIS_URL=redis://{{ redis_host }}:{{ redis_port }}
+      - RABBITMQ_URL=amqp://{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ rabbitmq_host }}:{{ rabbitmq_port }}
+      - SECRET_KEY={{ secret_key | default('your-secret-key') }}
+      - DEBUG={{ debug | default('false') }}
+      - LOG_LEVEL={{ log_level | default('INFO') }}
+    ports:
+      - "{{ auth_api_port }}:8080"
+    volumes:
+      - {{ application_config_dir }}/auth-api-config.yml:/app/config.yml:ro
+      - {{ application_logs_dir }}/auth-api:/app/logs
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ads API Service
+  ads-api:
+    image: ads-api:{{ app_version }}
+    container_name: ads-api-container
+    restart: unless-stopped
+    environment:
+      - DB_DSN={{ database_user }}:{{ database_password }}@tcp({{ database_host }}:{{ database_port }})/{{ database_name }}?parseTime=true
+      - TARANTOOL_URL=tarantool://{{ tarantool_host }}:{{ tarantool_port }}
+      - RABBITMQ_URL=amqp://{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ rabbitmq_host }}:{{ rabbitmq_port }}
+      - CLICKHOUSE_URL=http://{{ clickhouse_host }}:{{ clickhouse_port }}
+      - CLICKHOUSE_DATABASE={{ clickhouse_database }}
+      - DEBUG={{ debug | default('false') }}
+      - LOG_LEVEL={{ log_level | default('INFO') }}
+    ports:
+      - "{{ ads_api_port }}:8081"
+    volumes:
+      - {{ application_config_dir }}/ads-api-config.yml:/app/config.yml:ro
+      - {{ application_logs_dir }}/ads-api:/app/logs
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Analytics API Service
+  analytics-api:
+    image: analytics-api:{{ app_version }}
+    container_name: analytics-api-container
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_URL=http://{{ clickhouse_host }}:{{ clickhouse_port }}
+      - CLICKHOUSE_DATABASE={{ clickhouse_database }}
+      - RABBITMQ_URL=amqp://{{ rabbitmq_user }}:{{ rabbitmq_password }}@{{ rabbitmq_host }}:{{ rabbitmq_port }}
+      - DEBUG={{ debug | default('false') }}
+      - LOG_LEVEL={{ log_level | default('INFO') }}
+    ports:
+      - "{{ analytics_api_port }}:8082"
+    volumes:
+      - {{ application_config_dir }}/analytics-api-config.yml:/app/config.yml:ro
+      - {{ application_logs_dir }}/analytics-api:/app/logs
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Admin Panel Service
+  admin-panel:
+    image: admin-panel:{{ app_version }}
+    container_name: admin-panel-container
+    restart: unless-stopped
+    environment:
+      - AUTH_API_URL=http://auth-api:8080
+      - ADS_API_URL=http://ads-api:8081
+      - ANALYTICS_API_URL=http://analytics-api:8082
+      - DEBUG={{ debug | default('false') }}
+      - LOG_LEVEL={{ log_level | default('INFO') }}
+    ports:
+      - "{{ admin_panel_port }}:8083"
+    volumes:
+      - {{ application_config_dir }}/admin-panel-config.yml:/app/config.yml:ro
+      - {{ application_logs_dir }}/admin-panel:/app/logs
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    depends_on:
+      - auth-api
+      - ads-api
+      - analytics-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Service
+  redis:
+    image: redis:{{ redis_version | default('7.0') }}
+    container_name: redis-container
+    restart: unless-stopped
+    ports:
+      - "{{ redis_port }}:6379"
+    volumes:
+      - {{ redis_data_dir }}:/data
+      - {{ redis_config_dir }}/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - {{ project_name | default('ad-platform') }}-network
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+networks:
+  {{ project_name | default('ad-platform') }}-network:
+    external: true

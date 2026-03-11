@@ -1,0 +1,9 @@
+{{ project_base_dir }}/logs/application/*.log {
+    daily
+    rotate {{ log_retention_days | default(7) }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

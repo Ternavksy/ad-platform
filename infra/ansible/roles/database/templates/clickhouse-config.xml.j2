@@ -1,0 +1,24 @@
+<!-- Managed by Ansible -->
+
+<yandex>
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-server/clickhouse.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-error.log</errorlog>
+    </logger>
+
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <listen_host>0.0.0.0</listen_host>
+
+    <max_connections>4096</max_connections>
+
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <users_config>users.xml</users_config>
+
+    <default_profile>default</default_profile>
+    <default_database>default</default_database>
+</yandex>

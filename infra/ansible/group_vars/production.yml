@@ -1,0 +1,123 @@
+---
+ # настройка переменных для production окружения
+
+# Environment settings
+environment: "production"
+debug: false
+log_level: "INFO"
+
+# Database configuration for production
+database_host: "db-server"
+database_port: 3306
+database_name: "ad_platform_prod"
+database_user: "ad_user_prod"
+database_password: "{{ vault_database_password_prod }}"
+
+# Redis configuration for production
+redis_host: "db-server"
+redis_port: 6379
+redis_password: "{{ vault_redis_password_prod }}"
+
+# RabbitMQ configuration for production
+rabbitmq_host: "db-server"
+rabbitmq_port: 5672
+rabbitmq_user: "prod_user"
+rabbitmq_password: "{{ vault_rabbitmq_password_prod }}"
+
+# ClickHouse configuration for production
+clickhouse_host: "db-server"
+clickhouse_port: 8123
+clickhouse_database: "ad_platform_prod"
+
+# Tarantool configuration for production
+tarantool_host: "db-server"
+tarantool_port: 3301
+
+# Monitoring configuration for production
+monitoring_host: "monitoring-server"
+prometheus_port: 9090
+grafana_port: 3000
+grafana_admin_user: "admin"
+grafana_admin_password: "{{ vault_grafana_password_prod }}"
+
+# SSL configuration for production
+ssl_enabled: true
+ssl_email: "admin@ad-platform.com"
+domain_name: "ad-platform.com"
+
+# Backup configuration for production
+backup_enabled: true
+backup_retention_days: 30
+backup_storage_path: "/opt/ad-platform/backups/production"
+
+# Security configuration for production
+firewall_enabled: true
+ssh_key_path: "/opt/keys/production.pub"
+security_headers_enabled: true
+rate_limiting_enabled: true
+
+# Application configuration for production
+app_version: "1.0.0"
+docker_registry: "registry.ad-platform.com"
+docker_network_name: "ad-platform-prod-network"
+
+# Resource limits for production
+cpu_limit: "8"
+memory_limit: "16g"
+max_connections: 2000
+connection_timeout: 30
+
+# Performance configuration for production
+enable_caching: true
+cache_ttl: 3600
+enable_compression: true
+compression_level: 6
+
+# Monitoring and alerting for production
+monitoring_enabled: true
+alert_email_enabled: true
+alert_email_to: "admin@ad-platform.com"
+alert_email_from: "monitoring@ad-platform.com"
+alert_smtp_host: "smtp.ad-platform.com"
+alert_smtp_port: 587
+
+# High availability settings for production
+enable_ha: true
+replica_count: 3
+load_balancer_enabled: true
+health_check_path: "/health"
+
+# Logging configuration for production
+log_retention_days: 90
+log_level: "INFO"
+structured_logging: true
+log_format: "json"
+
+# Database optimization for production
+database_max_connections: 100
+database_connection_pool_size: 20
+database_query_timeout: 30
+database_slow_query_log: true
+database_slow_query_threshold: 1000
+
+# Application optimization for production
+app_worker_processes: 4
+app_worker_connections: 1000
+app_max_request_size: "10m"
+app_request_timeout: 60
+
+# CDN configuration for production
+cdn_enabled: true
+cdn_domain: "cdn.ad-platform.com"
+cdn_cache_ttl: 86400
+
+# Third-party integrations for production
+external_api_timeout: 30
+external_api_retries: 3
+external_api_rate_limit: 1000
+
+# Compliance and auditing for production
+audit_logging_enabled: true
+audit_log_retention_days: 365
+data_retention_policy: "7y"
+gdpr_compliant: true

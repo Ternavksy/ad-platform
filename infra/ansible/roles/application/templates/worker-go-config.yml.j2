@@ -1,0 +1,21 @@
+# Managed by Ansible
+
+worker:
+  name: go-worker
+  concurrency: 5
+
+rabbitmq:
+  host: {{ rabbitmq_host }}
+  port: {{ rabbitmq_port }}
+  user: {{ rabbitmq_user }}
+  password: {{ rabbitmq_password }}
+
+database:
+  host: {{ database_host }}
+  port: {{ database_port }}
+  name: {{ database_name }}
+  user: {{ database_user }}
+  password: {{ database_password }}
+
+logging:
+  level: {{ log_level }}

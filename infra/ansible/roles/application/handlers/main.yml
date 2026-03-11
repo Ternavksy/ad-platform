@@ -1,0 +1,6 @@
+# Обработчики для управления сервисами приложения
+
+- name: Restart Nginx
+  shell: docker compose restart nginx
+  args:
+    chdir: "{{ project_config_dir }}/application"

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  tarantool:
+    image: tarantool/tarantool:2.11
+    container_name: tarantool
+    restart: always
+
+    ports:
+      - "{{ tarantool_port | default(3301) }}:3301"
+
+    volumes:
+      - {{ project_data_dir }}/databases/tarantool:/var/lib/tarantool
+      - {{ project_config_dir }}/databases/tarantool.cfg:/etc/tarantool/tarantool.cfg
+
+    command: tarantool /etc/tarantool/tarantool.cfg
+
+    networks:
+      - ad-platform-network
+
+networks:
+  ad-platform-network:
+    external: true

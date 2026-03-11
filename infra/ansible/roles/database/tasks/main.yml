@@ -1,0 +1,184 @@
+---
+# Database role tasks
+
+- name: Create database directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+  loop:
+    - "{{ database_data_dir }}"
+    - "{{ database_logs_dir }}"
+    - "{{ database_config_dir }}"
+
+- name: Create MySQL configuration
+  template:
+    src: mysql.cnf.j2
+    dest: "{{ database_config_dir }}/mysql.cnf"
+    mode: '0644'
+  notify: Restart MySQL
+
+- name: Create MySQL Docker Compose file
+  template:
+    src: docker-compose.mysql.yml.j2
+    dest: "{{ database_config_dir }}/docker-compose.mysql.yml"
+    mode: '0644'
+
+- name: Create Tarantool configuration
+  template:
+    src: tarantool.cfg.j2
+    dest: "{{ database_config_dir }}/tarantool.cfg"
+    mode: '0644'
+  notify: Restart Tarantool
+
+- name: Create Tarantool Docker Compose file
+  template:
+    src: docker-compose.tarantool.yml.j2
+    dest: "{{ database_config_dir }}/docker-compose.tarantool.yml"
+    mode: '0644'
+
+- name: Create ClickHouse configuration
+  template:
+    src: clickhouse-config.xml.j2
+    dest: "{{ database_config_dir }}/clickhouse-config.xml"
+    mode: '0644'
+  notify: Restart ClickHouse
+
+- name: Create ClickHouse Docker Compose file
+  template:
+    src: docker-compose.clickhouse.yml.j2
+    dest: "{{ database_config_dir }}/docker-compose.clickhouse.yml"
+    mode: '0644'
+
+- name: Create RabbitMQ configuration
+  template:
+    src: rabbitmq.conf.j2
+    dest: "{{ database_config_dir }}/rabbitmq.conf"
+    mode: '0644'
+  notify: Restart RabbitMQ
+
+- name: Create RabbitMQ Docker Compose file
+  template:
+    src: docker-compose.rabbitmq.yml.j2
+    dest: "{{ database_config_dir }}/docker-compose.rabbitmq.yml"
+    mode: '0644'
+
+- name: Deploy MySQL
+  shell: docker compose -f {{ database_config_dir }}/docker-compose.mysql.yml up -d
+  args:
+    chdir: "{{ database_config_dir }}"
+
+- name: Deploy Tarantool
+  shell: docker compose -f {{ database_config_dir }}/docker-compose.tarantool.yml up -d
+  args:
+    chdir: "{{ database_config_dir }}"
+
+- name: Deploy ClickHouse
+  shell: docker compose -f {{ database_config_dir }}/docker-compose.clickhouse.yml up -d
+  args:
+    chdir: "{{ database_config_dir }}"
+
+- name: Deploy RabbitMQ
+  shell: docker compose -f {{ database_config_dir }}/docker-compose.rabbitmq.yml up -d
+  args:
+    chdir: "{{ database_config_dir }}"
+
+- name: Wait for MySQL to be ready
+  wait_for:
+    host: localhost
+    port: "{{ database_port }}"
+    delay: 10
+    timeout: 120
+
+- name: Wait for Tarantool to be ready
+  wait_for:
+    host: localhost
+    port: 3301
+    delay: 5
+    timeout: 60
+
+- name: Wait for ClickHouse to be ready
+  wait_for:
+    host: localhost
+    port: 8123
+    delay: 10
+    timeout: 120
+
+- name: Wait for RabbitMQ to be ready
+  wait_for:
+    host: localhost
+    port: 5672
+    delay: 10
+    timeout: 120
+
+- name: Initialize MySQL database
+  template:
+    src: init_mysql.sql.j2
+    dest: "{{ database_config_dir }}/init_mysql.sql"
+    mode: '0644'
+
+- name: Run MySQL initialization script
+  shell: 
+    docker exec -i mysql-container mysql -u root -proot_password < {{ project_config_dir }}/databases/init_mysql.sql
+  when: mysql_root_password is defined
+
+- name: Create ClickHouse database
+  command: docker exec -i clickhouse clickhouse-client --query="CREATE DATABASE IF NOT EXISTS ad_platform"
+
+- name: Create ClickHouse tables
+  template:
+    src: init_clickhouse.sql.j2
+    dest: "{{ database_config_dir }}/init_clickhouse.sql"
+    mode: '0644'
+
+- name: Run ClickHouse initialization script
+  shell: docker exec -i clickhouse clickhouse-client --multiquery < {{ database_config_dir }}/init_clickhouse.sql
+
+- name: Configure RabbitMQ
+  command: docker exec -i rabbitmq rabbitmqctl set_policy ha-all ".*" '{"ha-mode":"all"}'
+  when: rabbitmq_ha_enabled | default(false)
+
+- name: Create RabbitMQ users
+  command: docker exec -i rabbitmq rabbitmqctl add_user {{ item.user }} {{ item.password }}
+  loop: "{{ rabbitmq_users | default([]) }}"
+  when: rabbitmq_users is defined
+
+- name: Set RabbitMQ user permissions
+  command: docker exec -i rabbitmq rabbitmqctl set_permissions -p / {{ item.user }} ".*" ".*" ".*"
+  loop: "{{ rabbitmq_users | default([]) }}"
+  when: rabbitmq_users is defined
+
+- name: Create RabbitMQ virtual hosts
+  command: docker exec -i rabbitmq rabbitmqctl add_vhost {{ item }}
+  loop: "{{ rabbitmq_vhosts | default([]) }}"
+  when: rabbitmq_vhosts is defined
+
+- name: Configure database backups
+  template:
+    src: backup_database.sh.j2
+    dest: "{{ database_config_dir }}/backup_database.sh"
+    mode: '0755'
+
+- name: Create backup cron job
+  cron:
+    name: "Database backup"
+    minute: "0"
+    hour: "2"
+    job: "{{ database_config_dir }}/backup_database.sh"
+    user: "{{ ansible_user }}"
+  when: database_backup_enabled | default(false)
+
+- name: Configure database monitoring
+  template:
+    src: database_monitoring.sh.j2
+    dest: "{{ database_config_dir }}/database_monitoring.sh"
+    mode: '0755'
+
+- name: Create monitoring cron job
+  cron:
+    name: "Database monitoring"
+    minute: "*/5"
+    job: "{{ database_config_dir }}/database_monitoring.sh"
+    user: "{{ ansible_user }}"
+  when: database_monitoring_enabled | default(false)

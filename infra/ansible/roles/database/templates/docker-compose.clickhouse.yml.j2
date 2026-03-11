@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:23
+    container_name: clickhouse
+    restart: always
+
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+
+    volumes:
+      - {{ project_data_dir }}/databases/clickhouse:/var/lib/clickhouse
+      - {{ project_logs_dir }}/databases/clickhouse:/var/log/clickhouse-server
+
+    networks:
+      - ad-platform-network
+
+networks:
+  ad-platform-network:
+    external: true

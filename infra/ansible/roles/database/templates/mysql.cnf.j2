@@ -1,0 +1,30 @@
+[mysqld]
+bind-address = 0.0.0.0
+port = 3306
+
+# Connections
+max_connections = {{ max_connections | default(200) }}
+connect_timeout = {{ connection_timeout | default(30) }}
+
+# Logging
+log_error = /var/log/mysql/error.log
+general_log = 0
+
+# Character set
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# InnoDB settings
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+innodb_flush_log_at_trx_commit = 1
+innodb_file_per_table = 1
+
+# Performance
+thread_cache_size = 16
+table_open_cache = 400
+
+# Slow query log
+slow_query_log = 1
+long_query_time = 2
+slow_query_log_file = /var/log/mysql/mysql-slow.log

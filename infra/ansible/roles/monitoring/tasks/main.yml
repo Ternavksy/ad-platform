@@ -1,0 +1,244 @@
+---
+# Monitoring role tasks
+
+- name: Create monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+  loop:
+    - "{{ monitoring_base_dir }}"
+    - "{{ monitoring_logs_dir }}"
+    - "{{ monitoring_config_dir }}"
+    - "{{ monitoring_data_dir }}"
+
+- name: Create Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_config_dir }}/prometheus.yml"
+    mode: '0644'
+  notify: Restart Prometheus
+
+- name: Create Prometheus Docker Compose file
+  template:
+    src: docker-compose.prometheus.yml.j2
+    dest: "{{ monitoring_config_dir }}/docker-compose.prometheus.yml"
+    mode: '0644'
+
+- name: Create Grafana configuration
+  template:
+    src: grafana.ini.j2
+    dest: "{{ monitoring_config_dir }}/grafana.ini"
+    mode: '0644'
+  notify: Restart Grafana
+
+- name: Create Grafana Docker Compose file
+  template:
+    src: docker-compose.grafana.yml.j2
+    dest: "{{ monitoring_config_dir }}/docker-compose.grafana.yml"
+    mode: '0644'
+
+- name: Create Node Exporter Docker Compose file
+  template:
+    src: docker-compose.node-exporter.yml.j2
+    dest: "{{ monitoring_config_dir }}/docker-compose.node-exporter.yml"
+    mode: '0644'
+
+- name: Create AlertManager configuration
+  template:
+    src: alertmanager.yml.j2
+    dest: "{{ monitoring_config_dir }}/alertmanager.yml"
+    mode: '0644'
+  notify: Restart AlertManager
+
+- name: Create AlertManager Docker Compose file
+  template:
+    src: docker-compose.alertmanager.yml.j2
+    dest: "{{ monitoring_config_dir }}/docker-compose.alertmanager.yml"
+    mode: '0644'
+
+- name: Create monitoring dashboards directory
+  file:
+    path: "{{ monitoring_config_dir }}/dashboards"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+
+- name: Create Grafana dashboards
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_config_dir }}/dashboards/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: 'dashboard-overview.json.j2', dest: 'overview.json' }
+    - { src: 'dashboard-applications.json.j2', dest: 'applications.json' }
+    - { src: 'dashboard-databases.json.j2', dest: 'databases.json' }
+    - { src: 'dashboard-infrastructure.json.j2', dest: 'infrastructure.json' }
+
+- name: Create monitoring alerts
+  template:
+    src: alerts.yml.j2
+    dest: "{{ monitoring_config_dir }}/alerts.yml"
+    mode: '0644'
+
+- name: Deploy Prometheus
+  command: docker-compose -f {{ monitoring_config_dir }}/docker-compose.prometheus.yml up -d
+  args:
+    chdir: "{{ monitoring_config_dir }}"
+
+- name: Deploy Grafana
+  command: docker-compose -f {{ monitoring_config_dir }}/docker-compose.grafana.yml up -d
+  args:
+    chdir: "{{ monitoring_config_dir }}"
+
+- name: Deploy Node Exporter
+  command: docker-compose -f {{ monitoring_config_dir }}/docker-compose.node-exporter.yml up -d
+  args:
+    chdir: "{{ monitoring_config_dir }}"
+
+- name: Deploy AlertManager
+  command: docker-compose -f {{ monitoring_config_dir }}/docker-compose.alertmanager.yml up -d
+  args:
+    chdir: "{{ monitoring_config_dir }}"
+
+- name: Wait for monitoring services to be ready
+  wait_for:
+    host: "{{ monitoring_host }}"
+    port: "{{ item }}"
+    delay: 10
+    timeout: 120
+  loop:
+    - 9090  # Prometheus
+    - 3000  # Grafana
+    - 9100  # Node Exporter
+    - 9093  # AlertManager
+
+- name: Configure Grafana datasources
+  template:
+    src: datasources.yml.j2
+    dest: "{{ monitoring_config_dir }}/datasources.yml"
+    mode: '0644'
+
+- name: Configure Grafana dashboards provisioning
+  template:
+    src: dashboards.yml.j2
+    dest: "{{ monitoring_config_dir }}/dashboards.yml"
+    mode: '0644'
+
+- name: Create monitoring scripts directory
+  file:
+    path: "{{ monitoring_config_dir }}/scripts"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+
+- name: Create monitoring scripts
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_config_dir }}/scripts/{{ item.dest }}"
+    mode: '0755'
+  loop:
+    - { src: 'collect-metrics.sh.j2', dest: 'collect-metrics.sh' }
+    - { src: 'send-alerts.sh.j2', dest: 'send-alerts.sh' }
+    - { src: 'health-check.sh.j2', dest: 'health-check.sh' }
+
+- name: Create monitoring cron jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    job: "{{ monitoring_config_dir }}/scripts/{{ item.job }}"
+    user: "{{ ansible_user }}"
+  loop:
+    - { name: "Collect metrics", minute: "*/5", hour: "*", job: "collect-metrics.sh" }
+    - { name: "Health check", minute: "*/2", hour: "*", job: "health-check.sh" }
+    - { name: "Send alerts", minute: "*/1", hour: "*", job: "send-alerts.sh" }
+
+- name: Configure log aggregation
+  template:
+    src: rsyslog.conf.j2
+    dest: "/etc/rsyslog.d/ad-platform.conf"
+    mode: '0644'
+  notify: Restart Rsyslog
+  when: ansible_facts['os_family'] != "Darwin"
+
+- name: Create log rotation for monitoring
+  template:
+    src: logrotate-monitoring.conf.j2
+    dest: "/etc/logrotate.d/ad-platform-monitoring"
+    mode: '0644'
+  when: ansible_facts['os_family'] != "Darwin"
+
+- name: Create monitoring backup script
+  template:
+    src: backup-monitoring.sh.j2
+    dest: "{{ monitoring_config_dir }}/backup-monitoring.sh"
+    mode: '0755'
+  when: ansible_facts['os_family'] != "Darwin"
+
+- name: Create monitoring backup cron job
+  cron:
+    name: "Monitoring backup"
+    minute: "0"
+    hour: "4"
+    job: "{{ monitoring_config_dir }}/backup-monitoring.sh"
+    user: "{{ ansible_user }}"
+  when: monitoring_backup_enabled | default(false)
+
+- name: Configure monitoring firewall rules
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 9090  # Prometheus
+    - 3000  # Grafana
+    - 9100  # Node Exporter
+    - 9093  # AlertManager
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW for monitoring
+  ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Configure monitoring firewall (RHEL/CentOS)
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+  loop:
+    - 9090  # Prometheus
+    - 3000  # Grafana
+    - 9100  # Node Exporter
+    - 9093  # AlertManager
+  when: ansible_os_family == "RedHat"
+
+- name: Reload firewalld for monitoring
+  command: firewall-cmd --reload
+  when: ansible_os_family == "RedHat"
+
+- name: Create monitoring documentation
+  template:
+    src: monitoring-guide.md.j2
+    dest: "{{ monitoring_config_dir }}/monitoring-guide.md"
+    mode: '0644'
+
+- name: Set up monitoring user permissions
+  user:
+    name: "{{ monitoring_user }}"
+    group: "{{ monitoring_group }}"
+    shell: /bin/bash
+    create_home: yes
+  when: 
+  - monitoring_user is defined
+  - ansible_facts['os_family'] != "Darwin"
+
+- name: Configure monitoring service accounts
+  file:
+    path: "{{ monitoring_config_dir }}/service-accounts"
+    state: directory
+    mode: '0700'
+    owner: "{{ ansible_user }}"
+  when: monitoring_service_accounts_enabled | default(false)

@@ -1,0 +1,27 @@
+---
+all:
+  children:
+
+    application:
+      hosts:
+        localhost:
+          ansible_connection: local
+          ansible_user: larisa
+          ansible_python_interpreter: /Users/larisa/Documents/ad-platform/.venv/bin/python
+    
+    database:
+      hosts:
+        localhost:
+          ansible_connection: local
+          ansible_user: larisa
+
+    monitoring:
+      hosts:
+        localhost:
+          ansible_connection: local
+          ansible_user: larisa
+
+      vars:
+        environment: development
+        docker_registry: localhost:5000
+        app_version: "latest"

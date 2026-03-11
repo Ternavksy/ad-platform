@@ -1,0 +1,13 @@
+# Managed by Ansible
+
+server:
+  host: 0.0.0.0
+  port: 8003
+
+clickhouse:
+  host: {{ clickhouse_host }}
+  port: {{ clickhouse_port }}
+  database: {{ clickhouse_database }}
+
+logging:
+  level: {{ log_level }}

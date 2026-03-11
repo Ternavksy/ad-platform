@@ -1,0 +1,19 @@
+- name: Restart MySQL
+  service:
+    name: mysql
+    state: restarted
+
+- name: Restart Tarantool
+  command: docker compose restart tarantool
+  args:
+    chdir: /opt/ad-platform/config/databases
+
+- name: Restart ClickHouse
+  command: docker compose restart clickhouse
+  args:
+    chdir: /opt/ad-platform/config/databases
+
+- name: Restart RabbitMQ
+  command: docker compose restart rabbitmq
+  args:
+    chdir: /opt/ad-platform/config/databases

@@ -1,0 +1,129 @@
+---
+# Default variables for monitoring role
+
+# Monitoring configuration
+monitoring_name: "ad-platform-monitoring"
+monitoring_version: "1.0.0"
+monitoring_host: "localhost"
+
+# Directory paths
+monitoring_base_dir: "{{ project_base_dir }}/monitoring"
+monitoring_logs_dir: "{{ project_logs_dir }}/monitoring"
+monitoring_config_dir: "{{ project_config_dir }}/monitoring"
+monitoring_data_dir: "{{ project_data_dir }}/monitoring"
+
+# Prometheus configuration
+prometheus_version: "2.47.0"
+prometheus_port: 9090
+prometheus_retention: "30d"
+prometheus_storage_path: "{{ monitoring_data_dir }}/prometheus"
+
+# Grafana configuration
+grafana_version: "10.1.0"
+grafana_port: 3000
+grafana_admin_user: "admin"
+grafana_admin_password: "admin"
+grafana_data_path: "{{ monitoring_data_dir }}/grafana"
+
+# Node Exporter configuration
+node_exporter_version: "1.6.1"
+node_exporter_port: 9100
+
+# AlertManager configuration
+alertmanager_version: "0.26.0"
+alertmanager_port: 9093
+alertmanager_storage_path: "{{ monitoring_data_dir }}/alertmanager"
+
+# Monitoring intervals
+scrape_interval: "15s"
+evaluation_interval: "15s"
+
+# Alert configuration
+alert_email_enabled: false
+alert_email_to: "admin@example.com"
+alert_email_from: "monitoring@example.com"
+alert_smtp_host: "localhost"
+alert_smtp_port: 587
+
+# Monitoring users
+monitoring_user: "monitoring"
+monitoring_group: "monitoring"
+
+# Backup configuration
+monitoring_backup_enabled: true
+monitoring_backup_dir: "{{ monitoring_data_dir }}/backups"
+monitoring_backup_retention_days: 30
+
+# Service accounts
+monitoring_service_accounts_enabled: false
+
+# Dashboard configuration
+dashboard_refresh_interval: "30s"
+dashboard_time_range: "1h"
+
+# Metrics configuration
+enable_application_metrics: true
+enable_database_metrics: true
+enable_infrastructure_metrics: true
+
+# Log aggregation
+log_aggregation_enabled: true
+log_retention_days: 7
+
+# Monitoring alerts
+alert_rules:
+  - name: "High CPU Usage"
+    expr: "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100) > 80"
+    for: "5m"
+    labels:
+      severity: "warning"
+    annotations:
+      summary: "High CPU usage detected"
+      description: "CPU usage is above 80% for more than 5 minutes"
+
+  - name: "High Memory Usage"
+    expr: "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85"
+    for: "5m"
+    labels:
+      severity: "warning"
+    annotations:
+      summary: "High memory usage detected"
+      description: "Memory usage is above 85% for more than 5 minutes"
+
+  - name: "Disk Space Low"
+    expr: "(1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 90"
+    for: "5m"
+    labels:
+      severity: "critical"
+    annotations:
+      summary: "Disk space low"
+      description: "Disk usage is above 90% for more than 5 minutes"
+
+# Application-specific alerts
+app_alert_rules:
+  - name: "Application Down"
+    expr: "up{job=~\"auth-api|ads-api|analytics-api\"} == 0"
+    for: "1m"
+    labels:
+      severity: "critical"
+    annotations:
+      summary: "Application service down"
+      description: "Application service {{ $labels.instance }} is down"
+
+  - name: "High Response Time"
+    expr: "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1"
+    for: "5m"
+    labels:
+      severity: "warning"
+    annotations:
+      summary: "High response time"
+      description: "95th percentile response time is above 1 second"
+
+  - name: "High Error Rate"
+    expr: "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m]) > 0.05"
+    for: "5m"
+    labels:
+      severity: "warning"
+    annotations:
+      summary: "High error rate"
+      description: "Error rate is above 5% for more than 5 minutes"

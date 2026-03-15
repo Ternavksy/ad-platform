@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: Auth API
+  description: Authentication and billing service API
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: daniil.ternavskiy@mail.ru
+
+paths:
+  /billing/deposit:
+    post:
+      summary: Deposit funds to user account
+      description: Adds funds to a user's account balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmountRequest'
+      responses:
+        '200':
+          description: Funds deposited successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Balance not found"
+
+  /billing/withdraw:
+    post:
+      summary: Withdraw funds from user account
+      description: Removes funds from a user's account balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmountRequest'
+      responses:
+        '200':
+          description: Funds withdrawn successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Balance not found"
+        '422':
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Insufficient funds"
+
+  /billing/balance/{user_id}:
+    get:
+      summary: Get user balance
+      description: Retrieves the current balance for a user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Balance not found"
+
+  /billing/transactions/{user_id}:
+    get:
+      summary: Get user transaction history
+      description: Retrieves the transaction history for a user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Transaction history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionResponse'
+
+  /billing/charge-for-ad:
+    post:
+      summary: Charge for ad creation
+      description: Charges a user's account for creating an ad
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: ad_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: amount
+          in: query
+          required: true
+          schema:
+            type: number
+            format: decimal
+      responses:
+        '200':
+          description: Ad charged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChargeResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Balance not found"
+        '422':
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Insufficient funds"
+
+  /billing/charge-for-creative:
+    post:
+      summary: Charge for creative creation
+      description: Charges a user's account for creating a creative
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: creative_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: amount
+          in: query
+          required: true
+          schema:
+            type: number
+            format: decimal
+      responses:
+        '200':
+          description: Creative charged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeChargeResponse'
+        '404':
+          description: Balance not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Balance not found"
+        '422':
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Insufficient funds"
+
+components:
+  schemas:
+    AmountRequest:
+      type: object
+      required:
+        - user_id
+        - amount
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        amount:
+          type: number
+          format: decimal
+          description: Amount to deposit/withdraw
+          minimum: 0
+        description:
+          type: string
+          description: Optional description for the transaction
+
+    DepositResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        balance:
+          type: number
+          format: float
+          description: Updated balance after deposit
+        transaction_id:
+          type: integer
+          format: int32
+          description: ID of the transaction
+
+    WithdrawResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        balance:
+          type: number
+          format: float
+          description: Updated balance after withdrawal
+        transaction_id:
+          type: integer
+          format: int32
+          description: ID of the transaction
+
+    BalanceResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        balance:
+          type: number
+          format: float
+          description: Current balance
+
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Transaction ID
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        amount:
+          type: number
+          format: float
+          description: Transaction amount
+        type:
+          type: string
+          description: Type of transaction (deposit, withdraw, ad_creation, etc.)
+        description:
+          type: string
+          description: Description of the transaction
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp of the transaction
+
+    ChargeResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        balance:
+          type: number
+          format: float
+          description: Updated balance after charge
+        transaction_id:
+          type: integer
+          format: int32
+          description: ID of the transaction
+        ad_id:
+          type: integer
+          format: int32
+          description: ID of the ad that was charged for
+
+    CreativeChargeResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          description: ID of the user
+        balance:
+          type: number
+          format: float
+          description: Updated balance after charge
+        transaction_id:
+          type: integer
+          format: int32
+          description: ID of the transaction
+        creative_id:
+          type: integer
+          format: int32
+          description: ID of the creative that was charged for
+
+tags:
+  - name: billing
+    description: Billing and payment operations
+  - name: balance
+    description: Balance management
+  - name: transactions
+    description: Transaction history and operations

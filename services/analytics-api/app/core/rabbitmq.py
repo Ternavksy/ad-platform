@@ -4,6 +4,9 @@ import json
 import logging
 from typing import Optional, Callable, Dict, Any
 from contextlib import asynccontextmanager
+from datetime import datetime
+
+from app.db.clickhouse import clickhouse_client
 
 logger = logging.getLogger(__name__)
 
@@ -87,19 +90,34 @@ async def get_rabbitmq_consumer():
 
 def create_message_handler():
     """Create a message handler for analytics"""
+    
     def handle_message(message: Dict[str, Any]):
         event_type = message.get("type")
         ad_id = message.get("ad_id")
-        
-        if event_type == "ad_created":
-            logger.info(f"Analytics: Processing ad_created event for ad {ad_id}")
-            pass
-            
-        elif event_type == "ad_updated":
-            logger.info(f"Analytics: Processing ad_updated event for ad {ad_id}")
-            pass
-            
+
+        if event_type in {"ad_created", "ad_updated"}:
+            logger.info(f"Analytics: Processing {event_type} event for ad {ad_id}")
+            now = datetime.now()
+            # Записываем событие в ClickHouse для статистики
+            stats_data = [
+                (
+                    now.date(),
+                    message.get("campaign_id", 0),
+                    int(ad_id) if ad_id else 0,
+                    message.get("creative_id", 0),
+                    1,  # показы
+                    0,  # клики
+                    0.0,  # стоимость
+                    now,
+                )
+            ]
+            try:
+                clickhouse_client.insert_ad_stats(stats_data)
+                logger.info(f"Analytics: Saved {event_type} event for ad {ad_id} to ClickHouse")
+            except Exception:
+                logger.exception(f"Failed to save {event_type} event to ClickHouse")
+
         else:
             logger.warning(f"Unknown event type: {event_type}")
-    
+
     return handle_message

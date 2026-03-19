@@ -63,6 +63,10 @@ func main() {
 	adService := service.NewAdService(adStore, rabbitmqService)
 	adHandler := handler.NewAdHandler(adService)
 
+	creativeStore := store.NewCreativeStore(db)
+	creativeService := service.NewCreativeService(creativeStore)
+	creativeHandler := handler.NewCreativeHandler(creativeService)
+
 	r := gin.New()
 	r.Use(handler.RequestID(),
 		handler.Logger(),
@@ -85,6 +89,11 @@ func main() {
 
 	r.POST("/ads", adHandler.Create)
 	r.GET("/ads/:id", adHandler.Get)
+
+	r.POST("/creatives", creativeHandler.Create)
+	r.GET("/creatives/:id", creativeHandler.Get)
+	r.PUT("/creatives/:id", creativeHandler.Update)
+	r.DELETE("/creatives/:id", creativeHandler.Delete)
 
 	srv := &http.Server{
 		Addr:    ":8080",

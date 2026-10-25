@@ -1,0 +1,452 @@
+class AppUser {
+  const AppUser({required this.id, required this.email, required this.role});
+
+  final int id;
+  final String email;
+  final String role;
+
+  factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
+    id: (json['id'] as num).toInt(),
+    email: json['email'] as String,
+    role: json['role'] as String? ?? 'user',
+  );
+}
+
+class Campaign {
+  const Campaign({
+    required this.id,
+    required this.userId,
+    required this.name,
+    required this.status,
+    this.budget = const CampaignBudget(),
+    this.schedule = const CampaignSchedule(),
+  });
+
+  final int id;
+  final int userId;
+  final String name;
+  final String status;
+  final CampaignBudget budget;
+  final CampaignSchedule schedule;
+
+  bool get isActive => status == 'active';
+
+  factory Campaign.fromJson(Map<String, dynamic> json) => Campaign(
+    id: (json['id'] as num).toInt(),
+    userId: (json['user_id'] as num).toInt(),
+    name: json['name'] as String,
+    status: json['status'] as String? ?? 'draft',
+    budget: CampaignBudget.fromJson(
+      (json['budget'] as Map?)?.cast<String, dynamic>() ?? const {},
+    ),
+    schedule: CampaignSchedule.fromJson(
+      (json['schedule'] as Map?)?.cast<String, dynamic>() ?? const {},
+    ),
+  );
+}
+
+class CampaignBudget {
+  const CampaignBudget({
+    this.total = 0,
+    this.dailyLimit = 0,
+    this.spentTotal = 0,
+    this.spentToday = 0,
+  });
+
+  final double total;
+  final double dailyLimit;
+  final double spentTotal;
+  final double spentToday;
+
+  bool get hasTotalLimit => total > 0;
+  bool get hasDailyLimit => dailyLimit > 0;
+  double get totalProgress =>
+      !hasTotalLimit ? 0 : (spentTotal / total).clamp(0, 1);
+
+  factory CampaignBudget.fromJson(Map<String, dynamic> json) => CampaignBudget(
+    total: (json['total'] as num?)?.toDouble() ?? 0,
+    dailyLimit: (json['daily_limit'] as num?)?.toDouble() ?? 0,
+    spentTotal: (json['spent_total'] as num?)?.toDouble() ?? 0,
+    spentToday: (json['spent_today'] as num?)?.toDouble() ?? 0,
+  );
+
+  Map<String, dynamic> toJson() => {'total': total, 'daily_limit': dailyLimit};
+}
+
+class CampaignSchedule {
+  const CampaignSchedule({
+    this.startsAt,
+    this.endsAt,
+    this.daysOfWeek = const [],
+    this.startHour = 0,
+    this.endHour = 24,
+  });
+
+  final DateTime? startsAt;
+  final DateTime? endsAt;
+  final List<int> daysOfWeek;
+  final int startHour;
+  final int endHour;
+
+  factory CampaignSchedule.fromJson(Map<String, dynamic> json) =>
+      CampaignSchedule(
+        startsAt:
+            DateTime.tryParse(json['starts_at'] as String? ?? '')?.toUtc(),
+        endsAt: DateTime.tryParse(json['ends_at'] as String? ?? '')?.toUtc(),
+        daysOfWeek:
+            (json['days_of_week'] as List? ?? const [])
+                .map((item) => (item as num).toInt())
+                .toList(),
+        startHour: (json['start_hour'] as num?)?.toInt() ?? 0,
+        endHour: (json['end_hour'] as num?)?.toInt() ?? 24,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'starts_at': startsAt?.toUtc().toIso8601String(),
+    'ends_at': endsAt?.toUtc().toIso8601String(),
+    'days_of_week': daysOfWeek,
+    'start_hour': startHour,
+    'end_hour': endHour,
+    'timezone': 'UTC',
+  };
+}
+
+class AdItem {
+  const AdItem({
+    required this.id,
+    required this.campaignId,
+    required this.title,
+    required this.status,
+    required this.placement,
+    required this.destinationUrl,
+    required this.weight,
+    this.bidCpm = 1,
+    this.placementId,
+    this.targeting = const AdTargeting(),
+  });
+
+  final int id;
+  final int campaignId;
+  final String title;
+  final String status;
+  final String placement;
+  final String destinationUrl;
+  final int weight;
+  final double bidCpm;
+  final int? placementId;
+  final AdTargeting targeting;
+
+  bool get isActive => status == 'active';
+
+  factory AdItem.fromJson(Map<String, dynamic> json) => AdItem(
+    id: (json['id'] as num).toInt(),
+    campaignId: (json['campaign_id'] as num).toInt(),
+    title: json['title'] as String,
+    status: json['status'] as String? ?? 'draft',
+    placement: json['placement'] as String? ?? 'feed',
+    destinationUrl: json['destination_url'] as String? ?? '',
+    weight: (json['weight'] as num?)?.toInt() ?? 1,
+    bidCpm: (json['bid_cpm'] as num?)?.toDouble() ?? 1,
+    placementId: (json['placement_id'] as num?)?.toInt(),
+    targeting: AdTargeting.fromJson(
+      (json['targeting'] as Map?)?.cast<String, dynamic>() ?? const {},
+    ),
+  );
+}
+
+class AdTargeting {
+  const AdTargeting({
+    this.minAge = 0,
+    this.maxAge = 0,
+    this.genders = const [],
+    this.interests = const [],
+    this.countries = const [],
+    this.regions = const [],
+    this.cities = const [],
+    this.deviceTypes = const [],
+    this.operatingSystems = const [],
+  });
+
+  final int minAge;
+  final int maxAge;
+  final List<String> genders;
+  final List<String> interests;
+  final List<String> countries;
+  final List<String> regions;
+  final List<String> cities;
+  final List<String> deviceTypes;
+  final List<String> operatingSystems;
+
+  bool get hasRules =>
+      minAge > 0 ||
+      maxAge > 0 ||
+      genders.isNotEmpty ||
+      interests.isNotEmpty ||
+      countries.isNotEmpty ||
+      regions.isNotEmpty ||
+      cities.isNotEmpty ||
+      deviceTypes.isNotEmpty ||
+      operatingSystems.isNotEmpty;
+
+  factory AdTargeting.fromJson(Map<String, dynamic> json) {
+    final audience =
+        (json['audience'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final geography =
+        (json['geography'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final device =
+        (json['device'] as Map?)?.cast<String, dynamic>() ?? const {};
+    List<String> strings(Map<String, dynamic> source, String key) =>
+        (source[key] as List? ?? const []).map((item) => '$item').toList();
+    return AdTargeting(
+      minAge: (audience['min_age'] as num?)?.toInt() ?? 0,
+      maxAge: (audience['max_age'] as num?)?.toInt() ?? 0,
+      genders: strings(audience, 'genders'),
+      interests: strings(audience, 'interests'),
+      countries: strings(geography, 'countries'),
+      regions: strings(geography, 'regions'),
+      cities: strings(geography, 'cities'),
+      deviceTypes: strings(device, 'types'),
+      operatingSystems: strings(device, 'operating_systems'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'audience': {
+      'min_age': minAge,
+      'max_age': maxAge,
+      'genders': genders,
+      'interests': interests,
+    },
+    'geography': {'countries': countries, 'regions': regions, 'cities': cities},
+    'device': {'types': deviceTypes, 'operating_systems': operatingSystems},
+  };
+}
+
+class Site {
+  const Site({
+    required this.id,
+    required this.userId,
+    required this.name,
+    required this.domain,
+    required this.status,
+  });
+
+  final int id;
+  final int userId;
+  final String name;
+  final String domain;
+  final String status;
+
+  bool get isActive => status == 'active';
+
+  factory Site.fromJson(Map<String, dynamic> json) => Site(
+    id: (json['id'] as num).toInt(),
+    userId: (json['user_id'] as num).toInt(),
+    name: json['name'] as String,
+    domain: json['domain'] as String,
+    status: json['status'] as String? ?? 'active',
+  );
+}
+
+class AdFormat {
+  const AdFormat({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.kind,
+    required this.width,
+    required this.height,
+    required this.status,
+  });
+
+  final int id;
+  final String code;
+  final String name;
+  final String kind;
+  final int width;
+  final int height;
+  final String status;
+
+  bool get isActive => status == 'active';
+  String get sizeLabel =>
+      width > 0 && height > 0 ? '$width×$height' : 'Адаптивный';
+
+  factory AdFormat.fromJson(Map<String, dynamic> json) => AdFormat(
+    id: (json['id'] as num).toInt(),
+    code: json['code'] as String,
+    name: json['name'] as String,
+    kind: json['kind'] as String,
+    width: (json['width'] as num?)?.toInt() ?? 0,
+    height: (json['height'] as num?)?.toInt() ?? 0,
+    status: json['status'] as String? ?? 'active',
+  );
+}
+
+class Placement {
+  const Placement({
+    required this.id,
+    required this.siteId,
+    required this.formatId,
+    required this.name,
+    required this.code,
+    required this.status,
+  });
+
+  final int id;
+  final int siteId;
+  final int formatId;
+  final String name;
+  final String code;
+  final String status;
+
+  bool get isActive => status == 'active';
+
+  factory Placement.fromJson(Map<String, dynamic> json) => Placement(
+    id: (json['id'] as num).toInt(),
+    siteId: (json['site_id'] as num).toInt(),
+    formatId: (json['format_id'] as num).toInt(),
+    name: json['name'] as String,
+    code: json['code'] as String,
+    status: json['status'] as String? ?? 'active',
+  );
+}
+
+class CreativeMedia {
+  const CreativeMedia({
+    this.type = 'text',
+    this.url = '',
+    this.mimeType = '',
+    this.fileName = '',
+    this.fileSize = 0,
+  });
+
+  final String type;
+  final String url;
+  final String mimeType;
+  final String fileName;
+  final int fileSize;
+
+  bool get hasFile => url.isNotEmpty;
+  bool get isImage => type == 'image';
+  bool get isVideo => type == 'video';
+
+  factory CreativeMedia.fromJson(Map<String, dynamic>? json) => CreativeMedia(
+    type: json?['type'] as String? ?? 'text',
+    url: json?['url'] as String? ?? '',
+    mimeType: json?['mime_type'] as String? ?? '',
+    fileName: json?['file_name'] as String? ?? '',
+    fileSize: (json?['file_size'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class Creative {
+  const Creative({
+    required this.id,
+    required this.adId,
+    required this.content,
+    this.media = const CreativeMedia(),
+    this.moderationStatus = 'draft',
+    this.moderationReason = '',
+    this.submittedAt,
+    this.reviewedAt,
+    this.reviewedBy,
+    this.adTitle = '',
+    this.campaignName = '',
+    this.ownerUserId = 0,
+  });
+
+  final int id;
+  final int adId;
+  final String content;
+  final CreativeMedia media;
+  final String moderationStatus;
+  final String moderationReason;
+  final DateTime? submittedAt;
+  final DateTime? reviewedAt;
+  final int? reviewedBy;
+  final String adTitle;
+  final String campaignName;
+  final int ownerUserId;
+
+  bool get canSubmitForModeration =>
+      moderationStatus == 'draft' || moderationStatus == 'rejected';
+  bool get isPending => moderationStatus == 'pending';
+  bool get isApproved => moderationStatus == 'approved';
+  bool get isRejected => moderationStatus == 'rejected';
+
+  factory Creative.fromJson(Map<String, dynamic> json) => Creative(
+    id: (json['id'] as num).toInt(),
+    adId: (json['ad_id'] as num).toInt(),
+    content: json['content'] as String,
+    media: CreativeMedia.fromJson(json['media'] as Map<String, dynamic>?),
+    moderationStatus: json['moderation_status'] as String? ?? 'draft',
+    moderationReason: json['moderation_reason'] as String? ?? '',
+    submittedAt:
+        DateTime.tryParse(json['submitted_at'] as String? ?? '')?.toLocal(),
+    reviewedAt:
+        DateTime.tryParse(json['reviewed_at'] as String? ?? '')?.toLocal(),
+    reviewedBy: (json['reviewed_by'] as num?)?.toInt(),
+    adTitle: json['ad_title'] as String? ?? '',
+    campaignName: json['campaign_name'] as String? ?? '',
+    ownerUserId: (json['owner_user_id'] as num?)?.toInt() ?? 0,
+  );
+}
+
+class BillingTransaction {
+  const BillingTransaction({
+    required this.id,
+    required this.amount,
+    required this.type,
+    required this.description,
+    required this.createdAt,
+  });
+
+  final int id;
+  final double amount;
+  final String type;
+  final String? description;
+  final DateTime createdAt;
+
+  bool get isIncome => type == 'deposit';
+
+  factory BillingTransaction.fromJson(Map<String, dynamic> json) =>
+      BillingTransaction(
+        id: (json['id'] as num).toInt(),
+        amount: (json['amount'] as num).toDouble(),
+        type: json['type'] as String,
+        description: json['description'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+      );
+}
+
+class AnalyticsPoint {
+  const AnalyticsPoint({
+    required this.date,
+    required this.campaignId,
+    this.adId,
+    this.creativeId,
+    required this.impressions,
+    required this.clicks,
+    required this.cost,
+  });
+
+  final DateTime date;
+  final int campaignId;
+  final int? adId;
+  final int? creativeId;
+  final int impressions;
+  final int clicks;
+  final double cost;
+
+  double get ctr => impressions == 0 ? 0 : clicks / impressions * 100;
+
+  factory AnalyticsPoint.fromJson(Map<String, dynamic> json) => AnalyticsPoint(
+    date: DateTime.parse(json['date'] as String),
+    campaignId: (json['campaign_id'] as num?)?.toInt() ?? 0,
+    adId: (json['ad_id'] as num?)?.toInt(),
+    creativeId: (json['creative_id'] as num?)?.toInt(),
+    impressions: (json['total_impressions'] as num).toInt(),
+    clicks: (json['total_clicks'] as num).toInt(),
+    cost: (json['total_cost'] as num).toDouble(),
+  );
+}

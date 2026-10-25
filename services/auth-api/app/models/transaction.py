@@ -1,7 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, BigInteger, Integer, Numeric, ForeignKey, String, DateTime
 from sqlalchemy.orm import relationship
 from app.db.base import Base
+
+
+def utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Transaction(Base):
@@ -11,6 +15,7 @@ class Transaction(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
     type = Column(String(32), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive)
     
     user = relationship("User", back_populates="transactions")

@@ -7,7 +7,6 @@ import pika
 import json
 import logging
 import os
-import sys
 import time
 from typing import Dict, Any
 
@@ -106,38 +105,46 @@ class AdEventWorker:
 
     def start(self):
         """Start consuming messages"""
-        self.connect()
+        while True:
+            self.connect()
 
-        try:
-            self.channel.basic_qos(prefetch_count=1)
+            try:
+                self.channel.basic_qos(prefetch_count=1)
 
-            self.channel.basic_consume(
-                queue="ad_worker_queue",
-                on_message_callback=self.process_message
-            )
+                self.channel.basic_consume(
+                    queue="ad_worker_queue",
+                    on_message_callback=self.process_message
+                )
 
-            logger.info("Starting worker...")
-            self.channel.start_consuming()
+                logger.info("Starting worker...")
+                self.channel.start_consuming()
 
-        except KeyboardInterrupt:
-            logger.info("Worker stopped by user")
+            except KeyboardInterrupt:
+                logger.info("Worker stopped by user")
+                self.stop()
+                return
 
-        except Exception as e:
-            logger.error(f"Error in worker: {e}")
+            except Exception as e:
+                logger.warning(f"RabbitMQ connection lost: {e}")
 
-        finally:
-            self.stop()
+            finally:
+                self.stop()
+
+            time.sleep(5)
 
     def stop(self):
         """Stop the worker"""
         try:
-            if self.channel:
+            if self.channel and self.channel.is_open:
                 self.channel.stop_consuming()
         except Exception:
             pass
 
-        if self.connection:
+        if self.connection and self.connection.is_open:
             self.connection.close()
+
+        self.channel = None
+        self.connection = None
 
         logger.info("Worker stopped")
 
@@ -148,11 +155,7 @@ def main():
 
     worker = AdEventWorker(rabbitmq_url)
 
-    try:
-        worker.start()
-    except Exception as e:
-        logger.error(f"Worker failed: {e}")
-        sys.exit(1)
+    worker.start()
 
 
 if __name__ == "__main__":

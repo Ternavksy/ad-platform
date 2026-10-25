@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     clickhouse_host: str = "clickhouse"
     clickhouse_port: int = 8123
     clickhouse_database: str = "analytics"
@@ -16,9 +18,4 @@ class Settings(BaseSettings):
     rabbitmq_port: int = 5672
     rabbitmq_username: str = "guest"
     rabbitmq_password: str = "guest"
-    
-    class Config:
-        env_file = ".env"
-
-
 settings = Settings()

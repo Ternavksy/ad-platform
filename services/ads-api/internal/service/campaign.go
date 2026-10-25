@@ -4,7 +4,7 @@ import (
 	"ads-api/internal/model"
 	"ads-api/internal/store"
 	"context"
-	"errors"
+	"time"
 )
 
 type CampaignService struct {
@@ -16,8 +16,8 @@ func NewCampaignService(s *store.CampaignStore) *CampaignService {
 }
 
 func (s *CampaignService) Create(ctx context.Context, c *model.Campaign) error {
-	if c.Name == "" {
-		return errors.New("campaign name required")
+	if err := normalizeCampaign(c, nil); err != nil {
+		return err
 	}
 	return s.store.Create(ctx, c)
 }
@@ -26,15 +26,39 @@ func (s *CampaignService) GetByID(ctx context.Context, id int64) (*model.Campaig
 	if id <= 0 {
 		return nil, ErrNotFound
 	}
-	return s.store.GetByID(ctx, id)
+	item, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	hydrateCampaign(item, time.Now().UTC())
+	return item, nil
+}
+
+func (s *CampaignService) ListByUser(ctx context.Context, userID int64) ([]model.Campaign, error) {
+	if userID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	items, err := s.store.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for index := range items {
+		hydrateCampaign(&items[index], now)
+	}
+	return items, nil
 }
 
 func (s *CampaignService) Update(ctx context.Context, c *model.Campaign) error {
 	if c.ID <= 0 {
 		return ErrNotFound
 	}
-	if c.Name == "" {
-		return errors.New("campaign name required")
+	current, err := s.store.GetByID(ctx, c.ID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if err := normalizeCampaign(c, current); err != nil {
+		return err
 	}
 	return s.store.Update(ctx, c)
 }

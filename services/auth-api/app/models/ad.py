@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Integer, String, ForeignKey
+from sqlalchemy import Column, BigInteger, Integer, Numeric, String, ForeignKey
 from app.db.base import Base
 
 class Ad(Base):
@@ -9,3 +9,4 @@ class Ad(Base):
     title = Column(String(255), nullable=False)
     transaction_id = Column(BigInteger, ForeignKey("transactions.id"), nullable=True)
     status = Column(String(32), default="active")
+    bid_cpm = Column(Numeric(14, 6), nullable=False, default=1)

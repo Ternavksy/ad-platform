@@ -30,6 +30,15 @@ class ClickhouseClient:
         self.client.insert('creative_stats', data, column_names=[
             'date', 'creative_id', 'impressions', 'clicks', 'cost', 'timestamp'
         ])
+
+    def insert_delivery_stats(self, data):
+        self.client.insert('delivery_stats', data, column_names=[
+            'event_id', 'delivery_id', 'date', 'campaign_id', 'ad_id',
+            'creative_id', 'placement', 'site_id', 'placement_id', 'format_id',
+            'placement_code', 'format_code', 'audience_age', 'audience_gender',
+            'audience_interests', 'country', 'region', 'city', 'device_type',
+            'operating_system', 'impressions', 'clicks', 'cost', 'timestamp'
+        ])
     
     def get_ad_stats(self, campaign_id: int = None, ad_id: int = None, 
                     start_date: str = None, end_date: str = None):
@@ -38,7 +47,7 @@ class ClickhouseClient:
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
                    sum(cost) as total_cost
-            FROM ads_stats
+            FROM delivery_stats FINAL
             WHERE 1=1
         """
         params = []
@@ -70,7 +79,7 @@ class ClickhouseClient:
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
                    sum(cost) as total_cost
-            FROM campaign_stats
+            FROM delivery_stats FINAL
             WHERE 1=1
         """
         params = []
@@ -98,7 +107,7 @@ class ClickhouseClient:
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
                    sum(cost) as total_cost
-            FROM creative_stats
+            FROM delivery_stats FINAL
             WHERE 1=1
         """
         params = []

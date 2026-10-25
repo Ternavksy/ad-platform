@@ -30,6 +30,20 @@ func (h *AdHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, req)
 }
 
+func (h *AdHandler) List(c *gin.Context) {
+	campaignID, err := strconv.ParseInt(c.Query("campaign_id"), 10, 64)
+	if err != nil || campaignID <= 0 {
+		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	items, err := h.service.ListByCampaign(c.Request.Context(), campaignID)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
 func (h *AdHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 

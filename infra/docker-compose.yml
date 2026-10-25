@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mysql:
     image: mysql:8.0
@@ -6,22 +5,58 @@ services:
     env_file:
       - .env
     ports:
-      - '3306:3306'
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
       start_period: 10s
+
+  mysql-exporter-init:
+    image: mysql:8.0
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      MYSQL_EXPORTER_USER: ${MYSQL_EXPORTER_USER:-metrics}
+      MYSQL_EXPORTER_PASSWORD: ${MYSQL_EXPORTER_PASSWORD:-metrics_password}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - mysql_exporter_config:/config
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mysql --protocol=tcp -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" -e "
+          CREATE USER IF NOT EXISTS '$${MYSQL_EXPORTER_USER}'@'%' IDENTIFIED BY '$${MYSQL_EXPORTER_PASSWORD}';
+          ALTER USER '$${MYSQL_EXPORTER_USER}'@'%' IDENTIFIED BY '$${MYSQL_EXPORTER_PASSWORD}';
+          GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO '$${MYSQL_EXPORTER_USER}'@'%';
+          FLUSH PRIVILEGES;
+        "
+        printf '[client]\nuser=%s\npassword=%s\nhost=mysql\n' \
+          "$${MYSQL_EXPORTER_USER}" "$${MYSQL_EXPORTER_PASSWORD}" > /config/.my.cnf
+        chmod 0644 /config/.my.cnf
+
+  db-migrate:
+    build: ../services/auth-api
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     restart: unless-stopped
     ports:
-      - '9000:9000'
-      - '8123:8123'
+      - "9000:9000"
+      - "8123:8123"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     environment:
@@ -29,10 +64,36 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE}
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+      start_period: 5s
+
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.8
+    restart: "no"
+    environment:
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE}
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./scripts/init_clickhouse.sql:/init/init_clickhouse.sql:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        clickhouse-client --host clickhouse \
+          --user "$${CLICKHOUSE_USERNAME}" \
+          --password "$${CLICKHOUSE_PASSWORD}" \
+          --query "CREATE DATABASE IF NOT EXISTS \`$${CLICKHOUSE_DATABASE}\`"
+        clickhouse-client --host clickhouse \
+          --user "$${CLICKHOUSE_USERNAME}" \
+          --password "$${CLICKHOUSE_PASSWORD}" \
+          --database "$${CLICKHOUSE_DATABASE}" \
+          --multiquery < /init/init_clickhouse.sql
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -40,26 +101,33 @@ services:
     env_file:
       - .env
     ports:
-      - '5672:5672'
-      - '15672:15672'
+      - "5672:5672"
+      - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
       start_period: 20s
 
   redis:
     image: redis:7
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   tarantool:
     image: tarantool/tarantool:2.10
     restart: unless-stopped
     ports:
-      - '33013:33013'
+      - "33013:33013"
     volumes:
       - ./scripts/init_tarantool.lua:/etc/tarantool/init.lua:ro
       - tarantool_data:/var/lib/tarantool
@@ -70,115 +138,181 @@ services:
       test: ["CMD", "nc", "-z", "localhost", "33013"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
   ads-api:
     build: ../services/ads-api
-    env_file:
-    - .env
-    depends_on:
-      mysql:
-        condition: service_healthy
-      rabbitmq:
-         condition: service_started
-      redis:
-         condition: service_started
-    ports:
-      - '8080:8080'
-
-  auth-api:
-    build: ../services/auth-api
-    env_file:
-    - .env
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-         condition: service_started
-    ports:
-      - '8000:8000'
-
-  analytics-api:
-    build: ../services/analytics-api
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
-      clickhouse:
+      db-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      tarantool:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      MEDIA_STORAGE_PATH: /data/media
+    volumes:
+      - ads_media:/data/media
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  auth-api:
+    build: ../services/auth-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - '8100:8100'
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  analytics-api:
+    build: ../services/analytics-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      clickhouse-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   admin-panel:
     build: ../services/admin-panel
-    depends_on:
-      mysql:
-        condition: service_healthy
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      ADMIN_DB_PATH: /app/data/db.sqlite3
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        python manage.py migrate --noinput
+        python manage.py collectstatic --noinput
+        exec gunicorn project.wsgi:application -b 0.0.0.0:8000
     ports:
-      - '8001:8000'
+      - "8001:8000"
+    volumes:
+      - admin_data:/app/data
+      - admin_static:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   ad-worker:
     build: ../services/workers/worker-py
+    restart: unless-stopped
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: ${RABBITMQ_URL}
 
   go-worker:
     build: ../services/workers/worker-go
+    restart: unless-stopped
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: ${RABBITMQ_URL}
 
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     ports:
-      - '9090:9090'
+      - "9090:9090"
     depends_on:
-      - ads-api
-      - auth-api
-      - analytics-api
+      ads-api:
+        condition: service_healthy
+      auth-api:
+        condition: service_healthy
+      analytics-api:
+        condition: service_healthy
 
   node-exporter:
     image: prom/node-exporter:latest
     restart: unless-stopped
+    tmpfs:
+      - /run/udev/data
     ports:
-      - '9100:9100'
+      - "9100:9100"
 
   mysqld-exporter:
     image: prom/mysqld-exporter:latest
     restart: unless-stopped
     depends_on:
-      mysql:
-        condition: service_healthy
-    env_file:
-      - .env
+      mysql-exporter-init:
+        condition: service_completed_successfully
     volumes:
-      - ./mysql/.my.cnf:/.my.cnf:ro
+      - mysql_exporter_config:/config:ro
+    command: ["--config.my-cnf=/config/.my.cnf"]
     ports:
-      - '9104:9104'
+      - "9104:9104"
 
   grafana:
     image: grafana/grafana:latest
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     env_file:
       - .env
+    environment:
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+    depends_on:
+      - prometheus
 
 volumes:
   mysql_data:
+  mysql_exporter_config:
   clickhouse_data:
-  grafana_data:
-  prometheus_data:
+  redis_data:
   tarantool_data:
+  admin_data:
+  admin_static:
+  prometheus_data:
+  grafana_data:
+  ads_media:

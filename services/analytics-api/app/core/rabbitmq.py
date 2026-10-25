@@ -2,6 +2,7 @@ import asyncio
 import aio_pika
 import json
 import logging
+import os
 from typing import Optional, Callable, Dict, Any
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -12,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class RabbitMQConsumer:
-    def __init__(self, url: str = "amqp://guest:guest@rabbitmq:5672/"):
-        self.url = url
+    def __init__(self, url: Optional[str] = None):
+        self.url = url or os.getenv(
+            "RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/"
+        )
         self.connection = None
         self.channel = None
         self.exchange = None
@@ -38,6 +41,8 @@ class RabbitMQConsumer:
             
             await self.queue.bind(self.exchange, "ad.created")
             await self.queue.bind(self.exchange, "ad.updated")
+            await self.queue.bind(self.exchange, "ad.impression")
+            await self.queue.bind(self.exchange, "ad.click")
             
             logger.info("Connected to RabbitMQ successfully")
             return True
@@ -51,18 +56,20 @@ class RabbitMQConsumer:
             logger.warning("RabbitMQ queue not available")
             return
 
-        try:
-            async with self.queue.iterator() as queue_iter:
-                async for message in queue_iter:
-                    async with message.process():
+        async with self.queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                try:
+                    async with message.process(requeue=True):
                         try:
                             data = json.loads(message.body.decode())
                             logger.info(f"Received message: {data}")
                             callback(data)
                         except json.JSONDecodeError as e:
                             logger.error(f"Failed to decode message: {e}")
-        except Exception as e:
-            logger.error(f"Error in message consumption: {e}")
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Failed to process RabbitMQ message; it was requeued")
 
     async def close(self):
         """Close RabbitMQ connection"""
@@ -93,31 +100,54 @@ def create_message_handler():
     
     def handle_message(message: Dict[str, Any]):
         event_type = message.get("type")
-        ad_id = message.get("ad_id")
-
         if event_type in {"ad_created", "ad_updated"}:
-            logger.info(f"Analytics: Processing {event_type} event for ad {ad_id}")
-            now = datetime.now()
-            # Записываем событие в ClickHouse для статистики
-            stats_data = [
-                (
-                    now.date(),
-                    message.get("campaign_id", 0),
-                    int(ad_id) if ad_id else 0,
-                    message.get("creative_id", 0),
-                    1,  # показы
-                    0,  # клики
-                    0.0,  # стоимость
-                    now,
-                )
-            ]
-            try:
-                clickhouse_client.insert_ad_stats(stats_data)
-                logger.info(f"Analytics: Saved {event_type} event for ad {ad_id} to ClickHouse")
-            except Exception:
-                logger.exception(f"Failed to save {event_type} event to ClickHouse")
+            logger.info("Analytics: metadata event %s does not change delivery metrics", event_type)
+            return
+        if event_type not in {"ad_impression", "ad_click"}:
+            logger.warning("Unknown event type: %s", event_type)
+            return
 
-        else:
-            logger.warning(f"Unknown event type: {event_type}")
+        occurred_at = message.get("occurred_at")
+        try:
+            timestamp = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
+        except (AttributeError, ValueError) as exc:
+            raise ValueError("delivery event has an invalid occurred_at") from exc
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.replace(tzinfo=None)
+
+        stats_data = [
+            (
+                str(message["event_id"]),
+                str(message["delivery_id"]),
+                timestamp.date(),
+                int(message["campaign_id"]),
+                int(message["ad_id"]),
+                int(message["creative_id"]),
+                str(message["placement"]),
+                int(message.get("site_id", 0)),
+                int(message.get("placement_id", 0)),
+                int(message.get("format_id", 0)),
+                str(message.get("placement_code", "")),
+                str(message.get("format_code", "")),
+                int(message.get("audience_age", 0)),
+                str(message.get("audience_gender", "")),
+                str(message.get("audience_interests", "")),
+                str(message.get("country", "")),
+                str(message.get("region", "")),
+                str(message.get("city", "")),
+                str(message.get("device_type", "")),
+                str(message.get("operating_system", "")),
+                1 if event_type == "ad_impression" else 0,
+                1 if event_type == "ad_click" else 0,
+                float(message.get("cost", 0.0)) if event_type == "ad_impression" else 0.0,
+                timestamp,
+            )
+        ]
+        clickhouse_client.insert_delivery_stats(stats_data)
+        logger.info(
+            "Analytics: saved %s for delivery %s",
+            event_type,
+            message["delivery_id"],
+        )
 
     return handle_message

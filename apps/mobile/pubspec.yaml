@@ -1,0 +1,26 @@
+name: ad_platform_mobile
+description: Mobile advertising control center for the Ad Platform backend.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  dio: ^5.8.0+1
+  fl_chart: ^0.70.2
+  flutter_riverpod: ^2.6.1
+  flutter_secure_storage: ^9.2.4
+  intl: ^0.20.2
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

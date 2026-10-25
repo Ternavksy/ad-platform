@@ -1,6 +1,7 @@
 import pika
 import json
 import logging
+import os
 from typing import Optional
 from contextlib import contextmanager
 
@@ -8,8 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class RabbitMQService:
-    def __init__(self, url: str = "amqp://guest:guest@rabbitmq:5672/"):
-        self.url = url
+    def __init__(self, url: Optional[str] = None):
+        self.url = url or os.getenv(
+            "RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/"
+        )
         self.connection = None
         self.channel = None
 

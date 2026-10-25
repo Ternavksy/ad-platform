@@ -1,46 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Wait for Clickhouse to be ready
-until curl -s http://localhost:8123/ping; do
-  echo "Waiting for Clickhouse..."
-  sleep 2
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+infra_dir="$(dirname "$script_dir")"
+
+if [[ -f "$infra_dir/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$infra_dir/.env"
+    set +a
+fi
+
+host="${CLICKHOUSE_HTTP_HOST:-127.0.0.1}"
+port="${CLICKHOUSE_PORT:-8123}"
+database="${CLICKHOUSE_DATABASE:-analytics}"
+username="${CLICKHOUSE_USERNAME:-default}"
+password="${CLICKHOUSE_PASSWORD:-}"
+base_url="http://${host}:${port}"
+
+until curl --fail --silent --user "${username}:${password}" "${base_url}/ping" >/dev/null; do
+    echo "Waiting for ClickHouse at ${base_url}..."
+    sleep 2
 done
 
-# Create database and tables
-curl -s -X POST 'http://localhost:8123/' -d "
-CREATE DATABASE IF NOT EXISTS analytics;
+curl --fail --silent --show-error \
+    --user "${username}:${password}" \
+    --data-binary "CREATE DATABASE IF NOT EXISTS \`${database}\`" \
+    "${base_url}/" >/dev/null
 
-CREATE TABLE IF NOT EXISTS analytics.ads_stats (
-    date Date,
-    campaign_id UInt64,
-    ad_id UInt64,
-    creative_id UInt64,
-    impressions UInt64,
-    clicks UInt64,
-    cost Float64,
-    timestamp DateTime
-) ENGINE = MergeTree()
-ORDER BY (date, campaign_id, ad_id, creative_id, timestamp);
+curl --fail --silent --show-error \
+    --user "${username}:${password}" \
+    --data-binary "@${script_dir}/init_clickhouse.sql" \
+    "${base_url}/?database=${database}&multiquery=1" >/dev/null
 
-CREATE TABLE IF NOT EXISTS analytics.campaign_stats (
-    date Date,
-    campaign_id UInt64,
-    impressions UInt64,
-    clicks UInt64,
-    cost Float64,
-    timestamp DateTime
-) ENGINE = MergeTree()
-ORDER BY (date, campaign_id, timestamp);
-
-CREATE TABLE IF NOT EXISTS analytics.creative_stats (
-    date Date,
-    creative_id UInt64,
-    impressions UInt64,
-    clicks UInt64,
-    cost Float64,
-    timestamp DateTime
-) ENGINE = MergeTree()
-ORDER BY (date, creative_id, timestamp);
-"
-
-echo "Clickhouse database and tables created successfully"
+echo "ClickHouse database and tables are ready."

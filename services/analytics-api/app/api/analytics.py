@@ -10,17 +10,12 @@ router = APIRouter()
 
 class StatsResponse(BaseModel):
     date: str
-    campaign_id: int
+    campaign_id: Optional[int] = None
     ad_id: Optional[int] = None
     creative_id: Optional[int] = None
     total_impressions: int
     total_clicks: int
     total_cost: float
-
-
-@router.on_event("startup")
-async def startup_event():
-    clickhouse_client.connect()
 
 
 @router.get("/ads", response_model=List[StatsResponse])

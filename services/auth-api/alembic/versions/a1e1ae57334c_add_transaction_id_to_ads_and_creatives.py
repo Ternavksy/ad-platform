@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # Add transaction_id column to ads table
-    op.add_column('ads', sa.Column('transaction_id', sa.Integer(), nullable=True))
+    op.add_column('ads', sa.Column('transaction_id', sa.BigInteger(), nullable=True))
     op.create_foreign_key(
         'fk_ads_transaction_id', 
         'ads', 'transactions', 
@@ -29,7 +29,7 @@ def upgrade() -> None:
     )
     
     # Add transaction_id column to creatives table
-    op.add_column('creatives', sa.Column('transaction_id', sa.Integer(), nullable=True))
+    op.add_column('creatives', sa.Column('transaction_id', sa.BigInteger(), nullable=True))
     op.create_foreign_key(
         'fk_creatives_transaction_id', 
         'creatives', 'transactions', 

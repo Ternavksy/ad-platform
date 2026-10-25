@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -133,13 +134,25 @@ func (w *AdEventWorker) processMessage(d amqp091.Delivery) {
 		return
 	}
 
-	eventType := data["type"].(string)
+	eventType, err := requiredString(data, "type")
+	if err != nil {
+		log.Printf("Invalid message: %v", err)
+		d.Nack(false, false)
+		return
+	}
+
+	adID, err := requiredString(data, "ad_id")
+	if err != nil {
+		log.Printf("Invalid message: %v", err)
+		d.Nack(false, false)
+		return
+	}
 
 	switch eventType {
 	case "ad_created":
-		w.handleAdCreated(data)
+		w.handleAdCreated(adID)
 	case "ad_updated":
-		w.handleAdUpdated(data)
+		w.handleAdUpdated(adID)
 	default:
 		log.Printf("Unknown event type: %s", eventType)
 	}
@@ -150,8 +163,26 @@ func (w *AdEventWorker) processMessage(d amqp091.Delivery) {
 	}
 }
 
-func (w *AdEventWorker) handleAdCreated(data map[string]interface{}) {
-	adID := data["ad_id"].(string)
+func requiredString(data map[string]interface{}, key string) (string, error) {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return "", fmt.Errorf("missing %s", key)
+	}
+
+	switch typed := value.(type) {
+	case string:
+		if typed == "" {
+			return "", fmt.Errorf("empty %s", key)
+		}
+		return typed, nil
+	case float64:
+		return fmt.Sprintf("%.0f", typed), nil
+	default:
+		return "", errors.New(key + " must be a string or number")
+	}
+}
+
+func (w *AdEventWorker) handleAdCreated(adID string) {
 	log.Printf("Go Worker: Processing ad_created event for ad %s", adID)
 
 	time.Sleep(100 * time.Millisecond)
@@ -159,8 +190,7 @@ func (w *AdEventWorker) handleAdCreated(data map[string]interface{}) {
 	log.Printf("Go Worker: Completed processing ad_created event for ad %s", adID)
 }
 
-func (w *AdEventWorker) handleAdUpdated(data map[string]interface{}) {
-	adID := data["ad_id"].(string)
+func (w *AdEventWorker) handleAdUpdated(adID string) {
 	log.Printf("Go Worker: Processing ad_updated event for ad %s", adID)
 
 	time.Sleep(100 * time.Millisecond)
@@ -185,7 +215,7 @@ func main() {
 	}
 
 	for {
-		conn, err := amqp091.Dial("amqp://guest:guest@rabbitmq:5672/")
+		conn, err := amqp091.Dial(rabbitmqURL)
 		if err == nil {
 			conn.Close()
 			break

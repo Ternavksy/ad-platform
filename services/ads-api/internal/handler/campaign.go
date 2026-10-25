@@ -30,6 +30,20 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, req)
 }
 
+func (h *CampaignHandler) List(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid user_id is required"})
+		return
+	}
+	items, err := h.service.ListByUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
 func (h *CampaignHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	campaign, err := h.service.GetByID(c.Request.Context(), id)

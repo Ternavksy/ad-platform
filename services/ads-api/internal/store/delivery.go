@@ -15,7 +15,10 @@ type DeliveryStore struct {
 	db *sqlx.DB
 }
 
-var ErrBudgetExhausted = errors.New("campaign budget exhausted")
+var (
+	ErrBudgetExhausted = errors.New("campaign budget exhausted")
+	ErrEventConflict   = errors.New("tracking event payload conflicts with an existing event")
+)
 
 func NewDeliveryStore(db *sqlx.DB) *DeliveryStore {
 	return &DeliveryStore{db: db}
@@ -104,7 +107,7 @@ func (s *DeliveryStore) GetByID(ctx context.Context, id string) (*model.Delivery
 		SELECT id, campaign_id, ad_id, creative_id, ad_title, creative_content,
 		       creative_media_type, creative_media_url, creative_mime_type,
 		       creative_file_name, creative_file_size,
-		       placement, visitor_id, destination_url, created_at, clicked_at,
+		       placement, visitor_id, destination_url, created_at, impressed_at, clicked_at,
 		       site_id, placement_id, format_id, placement_code, format_code,
 		       format_width, format_height, audience_age, audience_gender,
 		       audience_interests, country, region, city, device_type, operating_system,
@@ -152,12 +155,12 @@ func (s *DeliveryStore) Create(ctx context.Context, item *model.Delivery) error 
 			(id, campaign_id, ad_id, creative_id, ad_title, creative_content,
 			 creative_media_type, creative_media_url, creative_mime_type,
 			 creative_file_name, creative_file_size,
-			 placement, visitor_id, destination_url, created_at, clicked_at,
+			 placement, visitor_id, destination_url, created_at, impressed_at, clicked_at,
 			 site_id, placement_id, format_id, placement_code, format_code,
 			 format_width, format_height, audience_age, audience_gender,
 			 audience_interests, country, region, city, device_type, operating_system,
 			 bid_cpm, cost)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.CampaignID, item.AdID, item.CreativeID, item.Title,
 		item.Content, item.CreativeMediaType, item.CreativeMediaURL, item.CreativeMIMEType,
 		item.CreativeFileName, item.CreativeFileSize, item.Placement, item.VisitorID,
@@ -170,15 +173,212 @@ func (s *DeliveryStore) Create(ctx context.Context, item *model.Delivery) error 
 		return err
 	}
 
-	event := model.DeliveryEvent{
+	return tx.Commit()
+}
+
+func (s *DeliveryStore) TrackImpression(ctx context.Context, id string, now time.Time) (*model.Delivery, *model.TrackingResult, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+	item, result, err := ensureImpression(ctx, tx, id, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return item, result, nil
+}
+
+func (s *DeliveryStore) TrackClick(ctx context.Context, id string, now time.Time) (*model.Delivery, *model.TrackingResult, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+
+	item, _, err := ensureImpression(ctx, tx, id, now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE ad_deliveries SET clicked_at = ?
+		WHERE id = ? AND clicked_at IS NULL
+	`, now, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	item, err = getDeliveryTx(ctx, tx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, nil, err
+	}
+	var tracked *model.TrackingResult
+	if rows == 1 {
+		event := deliveryEvent(item, "ad_click", now)
+		if err := insertEvent(ctx, tx, &event); err != nil {
+			return nil, nil, err
+		}
+		tracked = trackingResult(event, true)
+	} else {
+		tracked, err = getTrackingResultTx(ctx, tx, id, "ad_click")
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return item, tracked, nil
+}
+
+func (s *DeliveryStore) TrackConversion(
+	ctx context.Context,
+	id string,
+	req model.ConversionRequest,
+	now time.Time,
+) (*model.Delivery, *model.TrackingResult, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+
+	item, _, err := ensureImpression(ctx, tx, id, now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var existing model.TrackingResult
+	err = tx.GetContext(ctx, &existing, `
+		SELECT delivery_id, event_id, 'ad_conversion' AS event_type,
+		       0 AS recorded, occurred_at, conversion_type,
+		       value AS conversion_value, currency AS conversion_currency
+		FROM delivery_conversions
+		WHERE delivery_id = ? AND event_id = ?
+	`, id, req.EventID)
+	if err == nil {
+		if existing.ConversionType != req.ConversionType ||
+			existing.ConversionValue != req.Value ||
+			existing.ConversionCurrency != req.Currency {
+			return nil, nil, ErrEventConflict
+		}
+		return item, &existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO delivery_conversions
+			(delivery_id, event_id, conversion_type, value, currency, occurred_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, id, req.EventID, req.ConversionType, req.Value, req.Currency, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	event := deliveryEvent(item, "ad_conversion", now)
+	event.ConversionID = req.EventID
+	event.ConversionType = req.ConversionType
+	event.ConversionValue = req.Value
+	event.ConversionCurrency = req.Currency
+	if err := insertEvent(ctx, tx, &event); err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return item, trackingResult(event, true), nil
+}
+
+func ensureImpression(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	id string,
+	now time.Time,
+) (*model.Delivery, *model.TrackingResult, error) {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE ad_deliveries SET impressed_at = ?
+		WHERE id = ? AND impressed_at IS NULL
+	`, now, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	item, err := getDeliveryTx(ctx, tx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, nil, err
+	}
+	if rows == 1 {
+		event := deliveryEvent(item, "ad_impression", now)
+		event.Cost = item.Cost
+		if err := insertEvent(ctx, tx, &event); err != nil {
+			return nil, nil, err
+		}
+		return item, trackingResult(event, true), nil
+	}
+	tracked, err := getTrackingResultTx(ctx, tx, id, "ad_impression")
+	if err != nil {
+		return nil, nil, err
+	}
+	return item, tracked, nil
+}
+
+func getDeliveryTx(ctx context.Context, tx *sqlx.Tx, id string) (*model.Delivery, error) {
+	var item model.Delivery
+	err := tx.GetContext(ctx, &item, `
+		SELECT id, campaign_id, ad_id, creative_id, ad_title, creative_content,
+		       creative_media_type, creative_media_url, creative_mime_type,
+		       creative_file_name, creative_file_size,
+		       placement, visitor_id, destination_url, created_at, impressed_at, clicked_at,
+		       site_id, placement_id, format_id, placement_code, format_code,
+		       format_width, format_height, audience_age, audience_gender,
+		       audience_interests, country, region, city, device_type, operating_system,
+		       bid_cpm, cost
+		FROM ad_deliveries WHERE id = ?
+	`, id)
+	return &item, err
+}
+
+func getTrackingResultTx(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	deliveryID string,
+	eventType string,
+) (*model.TrackingResult, error) {
+	var result model.TrackingResult
+	err := tx.GetContext(ctx, &result, `
+		SELECT delivery_id, id AS event_id, event_type, 0 AS recorded, occurred_at,
+		       conversion_type, conversion_value, conversion_currency
+		FROM delivery_outbox
+		WHERE delivery_id = ? AND event_type = ?
+		ORDER BY occurred_at, id
+		LIMIT 1
+	`, deliveryID, eventType)
+	return &result, err
+}
+
+func deliveryEvent(item *model.Delivery, eventType string, now time.Time) model.DeliveryEvent {
+	return model.DeliveryEvent{
 		ID:                uuid.NewString(),
 		DeliveryID:        item.ID,
-		EventType:         "ad_impression",
+		EventType:         eventType,
 		CampaignID:        item.CampaignID,
 		AdID:              item.AdID,
 		CreativeID:        item.CreativeID,
 		Placement:         item.Placement,
-		OccurredAt:        item.CreatedAt,
+		OccurredAt:        now,
 		SiteID:            item.SiteID,
 		PlacementID:       item.PlacementID,
 		FormatID:          item.FormatID,
@@ -193,87 +393,24 @@ func (s *DeliveryStore) Create(ctx context.Context, item *model.Delivery) error 
 		DeviceType:        item.DeviceType,
 		OperatingSystem:   item.OperatingSystem,
 		BidCPM:            item.BidCPM,
-		Cost:              item.Cost,
 	}
-	if err := insertEvent(ctx, tx, &event); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
-func (s *DeliveryStore) TrackClick(ctx context.Context, id string, now time.Time) (*model.Delivery, error) {
-	tx, err := s.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return nil, err
+func trackingResult(event model.DeliveryEvent, recorded bool) *model.TrackingResult {
+	eventID := event.ID
+	if event.EventType == "ad_conversion" && event.ConversionID != "" {
+		eventID = event.ConversionID
 	}
-	defer tx.Rollback()
-
-	result, err := tx.ExecContext(ctx, `
-		UPDATE ad_deliveries SET clicked_at = ?
-		WHERE id = ? AND clicked_at IS NULL
-	`, now, id)
-	if err != nil {
-		return nil, err
+	return &model.TrackingResult{
+		DeliveryID:         event.DeliveryID,
+		EventID:            eventID,
+		EventType:          event.EventType,
+		Recorded:           recorded,
+		OccurredAt:         event.OccurredAt,
+		ConversionType:     event.ConversionType,
+		ConversionValue:    event.ConversionValue,
+		ConversionCurrency: event.ConversionCurrency,
 	}
-
-	var item model.Delivery
-	err = tx.GetContext(ctx, &item, `
-		SELECT id, campaign_id, ad_id, creative_id, ad_title, creative_content,
-		       creative_media_type, creative_media_url, creative_mime_type,
-		       creative_file_name, creative_file_size,
-		       placement, visitor_id, destination_url, created_at, clicked_at,
-		       site_id, placement_id, format_id, placement_code, format_code,
-		       format_width, format_height, audience_age, audience_gender,
-		       audience_interests, country, region, city, device_type, operating_system,
-		       bid_cpm, cost
-		FROM ad_deliveries WHERE id = ?
-	`, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, sql.ErrNoRows
-		}
-		return nil, err
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return nil, err
-	}
-	if rows == 1 {
-		event := model.DeliveryEvent{
-			ID:                uuid.NewString(),
-			DeliveryID:        item.ID,
-			EventType:         "ad_click",
-			CampaignID:        item.CampaignID,
-			AdID:              item.AdID,
-			CreativeID:        item.CreativeID,
-			Placement:         item.Placement,
-			OccurredAt:        now,
-			SiteID:            item.SiteID,
-			PlacementID:       item.PlacementID,
-			FormatID:          item.FormatID,
-			PlacementCode:     item.PlacementCode,
-			FormatCode:        item.FormatCode,
-			AudienceAge:       item.AudienceAge,
-			AudienceGender:    item.AudienceGender,
-			AudienceInterests: item.AudienceInterests,
-			Country:           item.Country,
-			Region:            item.Region,
-			City:              item.City,
-			DeviceType:        item.DeviceType,
-			OperatingSystem:   item.OperatingSystem,
-			BidCPM:            item.BidCPM,
-			Cost:              0,
-		}
-		if err := insertEvent(ctx, tx, &event); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &item, nil
 }
 
 func insertEvent(ctx context.Context, tx *sqlx.Tx, event *model.DeliveryEvent) error {
@@ -283,14 +420,16 @@ func insertEvent(ctx context.Context, tx *sqlx.Tx, event *model.DeliveryEvent) e
 			 placement, occurred_at, published_at, site_id, placement_id, format_id,
 			 placement_code, format_code, audience_age, audience_gender,
 			 audience_interests, country, region, city, device_type, operating_system,
-			 bid_cpm, cost)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 bid_cpm, cost, conversion_id, conversion_type, conversion_value,
+			 conversion_currency)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, event.ID, event.DeliveryID, event.EventType, event.CampaignID,
 		event.AdID, event.CreativeID, event.Placement, event.OccurredAt,
 		event.SiteID, event.PlacementID, event.FormatID, event.PlacementCode, event.FormatCode,
 		event.AudienceAge, event.AudienceGender, event.AudienceInterests, event.Country,
 		event.Region, event.City, event.DeviceType, event.OperatingSystem,
-		event.BidCPM, event.Cost)
+		event.BidCPM, event.Cost, event.ConversionID, event.ConversionType,
+		event.ConversionValue, event.ConversionCurrency)
 	return err
 }
 
@@ -301,7 +440,8 @@ func (s *DeliveryStore) ListPendingEvents(ctx context.Context, limit int) ([]mod
 		       placement, occurred_at, site_id, placement_id, format_id,
 		       placement_code, format_code, audience_age, audience_gender,
 		       audience_interests, country, region, city, device_type, operating_system,
-		       bid_cpm, cost
+		       bid_cpm, cost, conversion_id, conversion_type, conversion_value,
+		       conversion_currency
 		FROM delivery_outbox
 		WHERE published_at IS NULL
 		ORDER BY occurred_at, id

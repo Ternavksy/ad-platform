@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS delivery_stats (
     operating_system LowCardinality(String),
     impressions UInt8,
     clicks UInt8,
+    conversions UInt8,
+    conversion_value Float64,
+    conversion_type LowCardinality(String),
+    conversion_currency LowCardinality(String),
     cost Float64,
     timestamp DateTime
 ) ENGINE = ReplacingMergeTree(timestamp)
@@ -71,3 +75,7 @@ ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS region LowCardinality(String
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS city LowCardinality(String) DEFAULT '' AFTER region;
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS device_type LowCardinality(String) DEFAULT '' AFTER city;
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS operating_system LowCardinality(String) DEFAULT '' AFTER device_type;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversions UInt8 DEFAULT 0 AFTER clicks;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_value Float64 DEFAULT 0 AFTER conversions;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_type LowCardinality(String) DEFAULT '' AFTER conversion_value;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_currency LowCardinality(String) DEFAULT '' AFTER conversion_type;

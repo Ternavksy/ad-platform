@@ -15,6 +15,8 @@ class StatsResponse(BaseModel):
     creative_id: Optional[int] = None
     total_impressions: int
     total_clicks: int
+    total_conversions: int
+    total_conversion_value: float
     total_cost: float
 
 
@@ -41,7 +43,9 @@ async def get_ad_stats(
                 creative_id=row[3],
                 total_impressions=row[4],
                 total_clicks=row[5],
-                total_cost=float(row[6])
+                total_conversions=row[6],
+                total_conversion_value=float(row[7]),
+                total_cost=float(row[8])
             )
             for row in results
         ]
@@ -68,7 +72,9 @@ async def get_campaign_stats(
                 campaign_id=row[1],
                 total_impressions=row[2],
                 total_clicks=row[3],
-                total_cost=float(row[4])
+                total_conversions=row[4],
+                total_conversion_value=float(row[5]),
+                total_cost=float(row[6])
             )
             for row in results
         ]
@@ -95,7 +101,9 @@ async def get_creative_stats(
                 creative_id=row[1],
                 total_impressions=row[2],
                 total_clicks=row[3],
-                total_cost=float(row[4])
+                total_conversions=row[4],
+                total_conversion_value=float(row[5]),
+                total_cost=float(row[6])
             )
             for row in results
         ]

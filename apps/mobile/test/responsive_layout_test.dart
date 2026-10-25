@@ -91,6 +91,8 @@ final _sampleState = AppDataState(
       creativeId: 100,
       impressions: 123456789,
       clicks: 1234567,
+      conversions: 12345,
+      conversionValue: 123456789.45,
       cost: 987654321.45,
     ),
   ],

@@ -389,6 +389,83 @@ class AdPlatformRepository {
     return Creative.fromJson(json);
   }
 
+  Future<AdDelivery?> selectAd({
+    String? requestId,
+    String placement = 'feed',
+    String placementCode = '',
+    String visitorId = '',
+    int age = 0,
+    String gender = '',
+    List<String> interests = const [],
+    String country = '',
+    String region = '',
+    String city = '',
+    String deviceType = '',
+    String operatingSystem = '',
+  }) async {
+    final json = await _ads.post(
+      '/delivery/select',
+      data: {
+        if (requestId != null) 'request_id': requestId,
+        'placement': placement,
+        'placement_code': placementCode,
+        'visitor_id': visitorId,
+        'audience': {
+          'age': age,
+          'gender': gender,
+          'interests': interests,
+        },
+        'geography': {'country': country, 'region': region, 'city': city},
+        'device': {
+          'type': deviceType,
+          'operating_system': operatingSystem,
+        },
+      },
+    );
+    if (json == null) return null;
+    return AdDelivery.fromJson(json as Map<String, dynamic>);
+  }
+
+  Future<TrackingReceipt> trackImpression(String deliveryId) async {
+    final json =
+        await _ads.post('/delivery/$deliveryId/impression')
+            as Map<String, dynamic>;
+    return TrackingReceipt.fromJson(json);
+  }
+
+  Future<TrackingReceipt> trackClick(String deliveryId) async {
+    final json =
+        await _ads.post('/delivery/$deliveryId/click')
+            as Map<String, dynamic>;
+    return TrackingReceipt.fromJson(json);
+  }
+
+  Future<TrackingReceipt> trackConversion(
+    String deliveryId, {
+    String? eventId,
+    String conversionType = 'purchase',
+    double value = 0,
+    String currency = '',
+  }) async {
+    final deliveryPrefix =
+        deliveryId.length <= 8 ? deliveryId : deliveryId.substring(0, 8);
+    final stableEventId =
+        eventId ??
+        'mobile-${DateTime.now().microsecondsSinceEpoch}-$deliveryPrefix';
+    final json =
+        await _ads.post(
+              '/delivery/$deliveryId/conversion',
+              data: {
+                'event_id': stableEventId,
+                'conversion_type': conversionType,
+                'value': value,
+                'currency': currency,
+              },
+            )
+            as Map<String, dynamic>;
+    return TrackingReceipt.fromJson(json);
+  }
+
   Future<List<AnalyticsPoint>> getCampaignAnalytics({int? campaignId}) async {
     final json =
         await _analytics.get(

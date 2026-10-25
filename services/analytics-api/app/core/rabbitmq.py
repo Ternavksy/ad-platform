@@ -43,6 +43,7 @@ class RabbitMQConsumer:
             await self.queue.bind(self.exchange, "ad.updated")
             await self.queue.bind(self.exchange, "ad.impression")
             await self.queue.bind(self.exchange, "ad.click")
+            await self.queue.bind(self.exchange, "ad.conversion")
             
             logger.info("Connected to RabbitMQ successfully")
             return True
@@ -103,7 +104,7 @@ def create_message_handler():
         if event_type in {"ad_created", "ad_updated"}:
             logger.info("Analytics: metadata event %s does not change delivery metrics", event_type)
             return
-        if event_type not in {"ad_impression", "ad_click"}:
+        if event_type not in {"ad_impression", "ad_click", "ad_conversion"}:
             logger.warning("Unknown event type: %s", event_type)
             return
 
@@ -139,6 +140,10 @@ def create_message_handler():
                 str(message.get("operating_system", "")),
                 1 if event_type == "ad_impression" else 0,
                 1 if event_type == "ad_click" else 0,
+                1 if event_type == "ad_conversion" else 0,
+                float(message.get("conversion_value", 0.0)) if event_type == "ad_conversion" else 0.0,
+                str(message.get("conversion_type", "")) if event_type == "ad_conversion" else "",
+                str(message.get("conversion_currency", "")) if event_type == "ad_conversion" else "",
                 float(message.get("cost", 0.0)) if event_type == "ad_impression" else 0.0,
                 timestamp,
             )

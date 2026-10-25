@@ -392,6 +392,83 @@ class Creative {
   );
 }
 
+class AdDelivery {
+  const AdDelivery({
+    required this.id,
+    required this.campaignId,
+    required this.adId,
+    required this.creativeId,
+    required this.title,
+    required this.content,
+    required this.destinationUrl,
+    required this.impressionUrl,
+    required this.clickUrl,
+    required this.conversionUrl,
+    this.media = const CreativeMedia(),
+  });
+
+  final String id;
+  final int campaignId;
+  final int adId;
+  final int creativeId;
+  final String title;
+  final String content;
+  final String destinationUrl;
+  final String impressionUrl;
+  final String clickUrl;
+  final String conversionUrl;
+  final CreativeMedia media;
+
+  factory AdDelivery.fromJson(Map<String, dynamic> json) => AdDelivery(
+    id: json['delivery_id'] as String,
+    campaignId: (json['campaign_id'] as num).toInt(),
+    adId: (json['ad_id'] as num).toInt(),
+    creativeId: (json['creative_id'] as num).toInt(),
+    title: json['title'] as String? ?? '',
+    content: json['content'] as String? ?? '',
+    destinationUrl: json['destination_url'] as String? ?? '',
+    impressionUrl: json['impression_url'] as String? ?? '',
+    clickUrl: json['click_url'] as String? ?? '',
+    conversionUrl: json['conversion_url'] as String? ?? '',
+    media: CreativeMedia.fromJson(json['media'] as Map<String, dynamic>?),
+  );
+}
+
+class TrackingReceipt {
+  const TrackingReceipt({
+    required this.deliveryId,
+    required this.eventId,
+    required this.eventType,
+    required this.recorded,
+    required this.occurredAt,
+    this.conversionType = '',
+    this.conversionValue = 0,
+    this.conversionCurrency = '',
+  });
+
+  final String deliveryId;
+  final String eventId;
+  final String eventType;
+  final bool recorded;
+  final DateTime occurredAt;
+  final String conversionType;
+  final double conversionValue;
+  final String conversionCurrency;
+
+  factory TrackingReceipt.fromJson(Map<String, dynamic> json) =>
+      TrackingReceipt(
+        deliveryId: json['delivery_id'] as String,
+        eventId: json['event_id'] as String,
+        eventType: json['event_type'] as String,
+        recorded: json['recorded'] as bool? ?? false,
+        occurredAt: DateTime.parse(json['occurred_at'] as String).toLocal(),
+        conversionType: json['conversion_type'] as String? ?? '',
+        conversionValue:
+            (json['conversion_value'] as num?)?.toDouble() ?? 0,
+        conversionCurrency: json['conversion_currency'] as String? ?? '',
+      );
+}
+
 class BillingTransaction {
   const BillingTransaction({
     required this.id,
@@ -427,6 +504,8 @@ class AnalyticsPoint {
     this.creativeId,
     required this.impressions,
     required this.clicks,
+    required this.conversions,
+    required this.conversionValue,
     required this.cost,
   });
 
@@ -436,9 +515,13 @@ class AnalyticsPoint {
   final int? creativeId;
   final int impressions;
   final int clicks;
+  final int conversions;
+  final double conversionValue;
   final double cost;
 
   double get ctr => impressions == 0 ? 0 : clicks / impressions * 100;
+  double get conversionRate =>
+      clicks == 0 ? 0 : conversions / clicks * 100;
 
   factory AnalyticsPoint.fromJson(Map<String, dynamic> json) => AnalyticsPoint(
     date: DateTime.parse(json['date'] as String),
@@ -447,6 +530,9 @@ class AnalyticsPoint {
     creativeId: (json['creative_id'] as num?)?.toInt(),
     impressions: (json['total_impressions'] as num).toInt(),
     clicks: (json['total_clicks'] as num).toInt(),
+    conversions: (json['total_conversions'] as num?)?.toInt() ?? 0,
+    conversionValue:
+        (json['total_conversion_value'] as num?)?.toDouble() ?? 0,
     cost: (json['total_cost'] as num).toDouble(),
   );
 }

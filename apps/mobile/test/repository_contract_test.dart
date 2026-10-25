@@ -34,6 +34,52 @@ class _FakeApiTransport implements ApiTransport {
     this.path = path;
     this.data = data;
     this.query = query;
+    if (path == '/delivery/select') {
+      return {
+        'delivery_id': 'delivery-1',
+        'campaign_id': 7,
+        'ad_id': 11,
+        'creative_id': 13,
+        'title': 'Offer',
+        'content': 'Buy now',
+        'destination_url': 'https://example.com/offer',
+        'impression_url': 'http://localhost/delivery/delivery-1/impression',
+        'click_url': 'http://localhost/delivery/delivery-1/click',
+        'conversion_url': 'http://localhost/delivery/delivery-1/conversion',
+        'media': {'type': 'image', 'url': '/media/banner.png'},
+      };
+    }
+    if (path.endsWith('/impression')) {
+      return {
+        'delivery_id': 'delivery-1',
+        'event_id': 'impression-1',
+        'event_type': 'ad_impression',
+        'recorded': true,
+        'occurred_at': '2026-10-25T10:00:00Z',
+      };
+    }
+    if (path.endsWith('/click')) {
+      return {
+        'delivery_id': 'delivery-1',
+        'event_id': 'click-1',
+        'event_type': 'ad_click',
+        'recorded': true,
+        'occurred_at': '2026-10-25T10:01:00Z',
+      };
+    }
+    if (path.endsWith('/conversion')) {
+      final conversion = data! as Map<String, dynamic>;
+      return {
+        'delivery_id': 'delivery-1',
+        'event_id': conversion['event_id'],
+        'event_type': 'ad_conversion',
+        'recorded': true,
+        'occurred_at': '2026-10-25T10:02:00Z',
+        'conversion_type': conversion['conversion_type'],
+        'conversion_value': conversion['value'],
+        'conversion_currency': conversion['currency'],
+      };
+    }
     if (path.endsWith('/submit')) {
       return {
         'id': 9,
@@ -260,5 +306,53 @@ void main() {
     expect(ads.path, '/moderation/creatives/9/review');
     expect(ads.data, {'decision': 'rejected', 'reason': 'Missing disclaimer'});
     expect(rejected.isRejected, isTrue);
+  });
+
+  test('delivery tracking sends impression, click and conversion events', () async {
+    final ads = _FakeApiTransport();
+    final repository = AdPlatformRepository(
+      auth: _FakeApiTransport(),
+      ads: ads,
+      analytics: _FakeApiTransport(),
+    );
+
+    final delivery = await repository.selectAd(
+      requestId: 'request-1',
+      placementCode: 'placement-1',
+      visitorId: 'visitor-1',
+      age: 27,
+      country: 'RU',
+      deviceType: 'mobile',
+      operatingSystem: 'android',
+    );
+    expect(delivery?.impressionUrl, contains('/impression'));
+    expect((ads.data! as Map<String, dynamic>)['audience'], {
+      'age': 27,
+      'gender': '',
+      'interests': <String>[],
+    });
+
+    final impression = await repository.trackImpression('delivery-1');
+    expect(ads.path, '/delivery/delivery-1/impression');
+    expect(impression.eventType, 'ad_impression');
+
+    final click = await repository.trackClick('delivery-1');
+    expect(ads.path, '/delivery/delivery-1/click');
+    expect(click.eventType, 'ad_click');
+
+    final conversion = await repository.trackConversion(
+      'delivery-1',
+      eventId: 'order-42',
+      value: 1499.9,
+      currency: 'RUB',
+    );
+    expect(ads.path, '/delivery/delivery-1/conversion');
+    expect(ads.data, {
+      'event_id': 'order-42',
+      'conversion_type': 'purchase',
+      'value': 1499.9,
+      'currency': 'RUB',
+    });
+    expect(conversion.conversionValue, 1499.9);
   });
 }

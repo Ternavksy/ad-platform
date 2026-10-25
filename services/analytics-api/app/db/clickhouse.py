@@ -37,7 +37,9 @@ class ClickhouseClient:
             'creative_id', 'placement', 'site_id', 'placement_id', 'format_id',
             'placement_code', 'format_code', 'audience_age', 'audience_gender',
             'audience_interests', 'country', 'region', 'city', 'device_type',
-            'operating_system', 'impressions', 'clicks', 'cost', 'timestamp'
+            'operating_system', 'impressions', 'clicks', 'conversions',
+            'conversion_value', 'conversion_type', 'conversion_currency',
+            'cost', 'timestamp'
         ])
     
     def get_ad_stats(self, campaign_id: int = None, ad_id: int = None, 
@@ -46,6 +48,8 @@ class ClickhouseClient:
             SELECT date, campaign_id, ad_id, creative_id, 
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
+                   sum(conversions) as total_conversions,
+                   sum(conversion_value) as total_conversion_value,
                    sum(cost) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1
@@ -78,6 +82,8 @@ class ClickhouseClient:
             SELECT date, campaign_id,
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
+                   sum(conversions) as total_conversions,
+                   sum(conversion_value) as total_conversion_value,
                    sum(cost) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1
@@ -106,6 +112,8 @@ class ClickhouseClient:
             SELECT date, creative_id,
                    sum(impressions) as total_impressions,
                    sum(clicks) as total_clicks,
+                   sum(conversions) as total_conversions,
+                   sum(conversion_value) as total_conversion_value,
                    sum(cost) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1

@@ -486,7 +486,9 @@ assert delivery["device"] == {
     "operating_system": "android",
 }
 assert delivery["destination_url"] == "https://example.com/offer"
+assert delivery["impression_url"] == f"http://127.0.0.1:8080/delivery/{delivery_request_id}/impression"
 assert delivery["click_url"] == f"http://127.0.0.1:8080/delivery/{delivery_request_id}/click"
+assert delivery["conversion_url"] == f"http://127.0.0.1:8080/delivery/{delivery_request_id}/conversion"
 result["delivery_id"] = delivery_request_id
 with open(result_path, "w") as output:
     json.dump(result, output)
@@ -518,6 +520,17 @@ campaign_after_delivery = request(
 assert abs(campaign_after_delivery["budget"]["spent_total"] - 0.0125) < 0.000001
 assert abs(campaign_after_delivery["budget"]["spent_today"] - 0.0125) < 0.000001
 
+first_impression = request(
+    "POST", f"http://127.0.0.1:8080/delivery/{delivery_request_id}/impression"
+)
+second_impression = request(
+    "POST", f"http://127.0.0.1:8080/delivery/{delivery_request_id}/impression"
+)
+assert first_impression["event_type"] == "ad_impression"
+assert first_impression["recorded"] is True
+assert second_impression["recorded"] is False
+assert second_impression["event_id"] == first_impression["event_id"]
+
 first_click = request(
     "POST", f"http://127.0.0.1:8080/delivery/{delivery_request_id}/click"
 )
@@ -526,6 +539,32 @@ second_click = request(
 )
 assert first_click["clicked"] is True
 assert second_click["clicked"] is True
+assert first_click["event_type"] == "ad_click"
+assert first_click["recorded"] is True
+assert second_click["recorded"] is False
+
+conversion_event_id = f"smoke-{uuid.uuid4()}"
+conversion_payload = {
+    "event_id": conversion_event_id,
+    "conversion_type": "purchase",
+    "value": 2499.5,
+    "currency": "RUB",
+}
+first_conversion = request(
+    "POST",
+    f"http://127.0.0.1:8080/delivery/{delivery_request_id}/conversion",
+    conversion_payload,
+)
+second_conversion = request(
+    "POST",
+    f"http://127.0.0.1:8080/delivery/{delivery_request_id}/conversion",
+    conversion_payload,
+)
+assert first_conversion["event_type"] == "ad_conversion"
+assert first_conversion["recorded"] is True
+assert first_conversion["conversion_value"] == 2499.5
+assert second_conversion["recorded"] is False
+assert second_conversion["event_id"] == conversion_event_id
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -560,16 +599,20 @@ for _ in range(30):
     if (
         sum(row["total_impressions"] for row in ad_rows) == 1
         and sum(row["total_clicks"] for row in ad_rows) == 1
+        and sum(row["total_conversions"] for row in ad_rows) == 1
+        and abs(sum(row["total_conversion_value"] for row in ad_rows) - 2499.5) < 0.000001
         and sum(row["total_impressions"] for row in campaign_rows) == 1
         and sum(row["total_clicks"] for row in campaign_rows) == 1
+        and sum(row["total_conversions"] for row in campaign_rows) == 1
         and sum(row["total_impressions"] for row in creative_rows) == 1
         and sum(row["total_clicks"] for row in creative_rows) == 1
+        and sum(row["total_conversions"] for row in creative_rows) == 1
         and abs(sum(row["total_cost"] for row in ad_rows) - 0.0125) < 0.000001
     ):
         break
     time.sleep(1)
 else:
-    raise RuntimeError("delivery impression/click events did not reach ClickHouse")
+    raise RuntimeError("delivery impression/click/conversion events did not reach ClickHouse")
 
 request("DELETE", f"http://127.0.0.1:8080/creatives/{result['creative_id']}")
 request("DELETE", f"http://127.0.0.1:8080/ads/{result['ad_id']}")

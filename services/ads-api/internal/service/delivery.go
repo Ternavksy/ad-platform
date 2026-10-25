@@ -17,6 +17,9 @@ import (
 )
 
 var placementPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
+var trackingEventIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+var conversionTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 
 type DeliveryService struct {
 	store *store.DeliveryStore
@@ -57,7 +60,7 @@ func (s *DeliveryService) Select(ctx context.Context, req model.DeliveryRequest)
 	}
 
 	if existing, err := s.store.GetByID(ctx, req.RequestID); err == nil {
-		setClickURL(existing)
+		setTrackingURLs(existing)
 		return existing, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("get existing delivery: %w", err)
@@ -154,7 +157,7 @@ func (s *DeliveryService) Select(ctx context.Context, req model.DeliveryRequest)
 	if err := s.store.Create(ctx, item); err != nil {
 		// A concurrent retry with the same request ID may have won the insert.
 		if existing, getErr := s.store.GetByID(ctx, req.RequestID); getErr == nil {
-			setClickURL(existing)
+			setTrackingURLs(existing)
 			return existing, nil
 		}
 		if errors.Is(err, store.ErrBudgetExhausted) {
@@ -162,23 +165,75 @@ func (s *DeliveryService) Select(ctx context.Context, req model.DeliveryRequest)
 		}
 		return nil, fmt.Errorf("create delivery: %w", err)
 	}
-	setClickURL(item)
+	setTrackingURLs(item)
 	return item, nil
 }
 
-func (s *DeliveryService) TrackClick(ctx context.Context, id string) (*model.Delivery, error) {
+func (s *DeliveryService) TrackImpression(ctx context.Context, id string) (*model.TrackingResult, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrNotFound
 	}
-	item, err := s.store.TrackClick(ctx, id, time.Now().UTC())
+	_, result, err := s.store.TrackImpression(ctx, id, time.Now().UTC())
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("track click: %w", err)
+		return nil, fmt.Errorf("track impression: %w", err)
 	}
-	setClickURL(item)
-	return item, nil
+	return result, nil
+}
+
+func (s *DeliveryService) TrackClick(ctx context.Context, id string) (*model.Delivery, *model.TrackingResult, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, nil, ErrNotFound
+	}
+	item, result, err := s.store.TrackClick(ctx, id, time.Now().UTC())
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("track click: %w", err)
+	}
+	setTrackingURLs(item)
+	return item, result, nil
+}
+
+func (s *DeliveryService) TrackConversion(
+	ctx context.Context,
+	id string,
+	req model.ConversionRequest,
+) (*model.TrackingResult, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrNotFound
+	}
+	req.EventID = strings.TrimSpace(req.EventID)
+	if req.EventID == "" {
+		req.EventID = uuid.NewString()
+	}
+	req.ConversionType = strings.TrimSpace(strings.ToLower(req.ConversionType))
+	if req.ConversionType == "" {
+		req.ConversionType = "purchase"
+	}
+	req.Currency = strings.TrimSpace(strings.ToUpper(req.Currency))
+	req.Value = roundMoney(req.Value)
+	if !trackingEventIDPattern.MatchString(req.EventID) ||
+		!conversionTypePattern.MatchString(req.ConversionType) ||
+		req.Value < 0 || req.Value > 1_000_000_000 ||
+		(req.Currency != "" && !currencyPattern.MatchString(req.Currency)) ||
+		(req.Value > 0 && req.Currency == "") {
+		return nil, ErrInvalidInput
+	}
+	_, result, err := s.store.TrackConversion(ctx, id, req, time.Now().UTC())
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if errors.Is(err, store.ErrEventConflict) {
+		return nil, ErrConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("track conversion: %w", err)
+	}
+	return result, nil
 }
 
 func groupCandidates(items []model.DeliveryCandidate) [][]model.DeliveryCandidate {
@@ -199,8 +254,10 @@ func deliveryHash(value string) uint64 {
 	return h.Sum64()
 }
 
-func setClickURL(item *model.Delivery) {
+func setTrackingURLs(item *model.Delivery) {
+	item.ImpressionURL = "/delivery/" + item.ID + "/impression"
 	item.ClickURL = "/delivery/" + item.ID + "/click"
+	item.ConversionURL = "/delivery/" + item.ID + "/conversion"
 	item.Media = model.CreativeMedia{
 		Type:     item.CreativeMediaType,
 		URL:      item.CreativeMediaURL,

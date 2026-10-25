@@ -130,6 +130,7 @@ func setupDB(t *testing.T) *sqlx.DB {
         visitor_id TEXT,
         destination_url TEXT NOT NULL,
         created_at DATETIME NOT NULL,
+        impressed_at DATETIME,
         clicked_at DATETIME
         ,site_id INTEGER NOT NULL DEFAULT 0
         ,placement_id INTEGER NOT NULL DEFAULT 0
@@ -178,9 +179,26 @@ func setupDB(t *testing.T) *sqlx.DB {
         ,operating_system TEXT NOT NULL DEFAULT ''
         ,bid_cpm REAL NOT NULL DEFAULT 0
         ,cost REAL NOT NULL DEFAULT 0
+        ,conversion_id TEXT NOT NULL DEFAULT ''
+        ,conversion_type TEXT NOT NULL DEFAULT ''
+        ,conversion_value REAL NOT NULL DEFAULT 0
+        ,conversion_currency TEXT NOT NULL DEFAULT ''
     );`)
 	if err != nil {
 		t.Fatalf("create delivery_outbox: %v", err)
+	}
+
+	_, err = db.Exec(`CREATE TABLE delivery_conversions(
+        delivery_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        conversion_type TEXT NOT NULL DEFAULT 'purchase',
+        value REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT '',
+        occurred_at DATETIME NOT NULL,
+        PRIMARY KEY(delivery_id, event_id)
+    );`)
+	if err != nil {
+		t.Fatalf("create delivery_conversions: %v", err)
 	}
 
 	return db
@@ -318,23 +336,65 @@ func TestDeliveryServiceSelectAndClickAreIdempotent(t *testing.T) {
 		t.Fatalf("future schedule must stop delivery: %v", err)
 	}
 
-	clicked, err := svc.TrackClick(context.Background(), first.ID)
+	var impressionsBefore int
+	if err := db.Get(&impressionsBefore, `SELECT count(*) FROM delivery_outbox WHERE event_type = 'ad_impression'`); err != nil {
+		t.Fatalf("count impressions before tracking: %v", err)
+	}
+	if impressionsBefore != 0 {
+		t.Fatalf("selecting an ad must not count as a confirmed impression")
+	}
+	impression, err := svc.TrackImpression(context.Background(), first.ID)
+	if err != nil || !impression.Recorded || impression.EventType != "ad_impression" {
+		t.Fatalf("track impression: result=%#v err=%v", impression, err)
+	}
+	repeatedImpression, err := svc.TrackImpression(context.Background(), first.ID)
+	if err != nil || repeatedImpression.Recorded || repeatedImpression.EventID != impression.EventID {
+		t.Fatalf("repeat impression: result=%#v err=%v", repeatedImpression, err)
+	}
+
+	clicked, clickEvent, err := svc.TrackClick(context.Background(), first.ID)
 	if err != nil || clicked.ClickedAt == nil {
 		t.Fatalf("track click: item=%#v err=%v", clicked, err)
 	}
-	if _, err := svc.TrackClick(context.Background(), first.ID); err != nil {
+	if !clickEvent.Recorded || clickEvent.EventType != "ad_click" {
+		t.Fatalf("track click event: %#v", clickEvent)
+	}
+	_, repeatedClick, err := svc.TrackClick(context.Background(), first.ID)
+	if err != nil || repeatedClick.Recorded || repeatedClick.EventID != clickEvent.EventID {
 		t.Fatalf("repeat click: %v", err)
 	}
+	conversionRequest := model.ConversionRequest{
+		EventID:        "order-42",
+		ConversionType: "purchase",
+		Value:          1499.90,
+		Currency:       "RUB",
+	}
+	conversion, err := svc.TrackConversion(context.Background(), first.ID, conversionRequest)
+	if err != nil || !conversion.Recorded || conversion.EventType != "ad_conversion" {
+		t.Fatalf("track conversion: result=%#v err=%v", conversion, err)
+	}
+	repeatedConversion, err := svc.TrackConversion(context.Background(), first.ID, conversionRequest)
+	if err != nil || repeatedConversion.Recorded || repeatedConversion.EventID != conversion.EventID {
+		t.Fatalf("repeat conversion: result=%#v err=%v", repeatedConversion, err)
+	}
+	conflicting := conversionRequest
+	conflicting.Value = 1
+	if _, err := svc.TrackConversion(context.Background(), first.ID, conflicting); !errors.Is(err, service.ErrConflict) {
+		t.Fatalf("conflicting conversion must fail: %v", err)
+	}
 
-	var impressions, clicks int
+	var impressions, clicks, conversions int
 	if err := db.Get(&impressions, `SELECT count(*) FROM delivery_outbox WHERE event_type = 'ad_impression'`); err != nil {
 		t.Fatalf("count impressions: %v", err)
 	}
 	if err := db.Get(&clicks, `SELECT count(*) FROM delivery_outbox WHERE event_type = 'ad_click'`); err != nil {
 		t.Fatalf("count clicks: %v", err)
 	}
-	if impressions != 1 || clicks != 1 {
-		t.Fatalf("idempotency failed: impressions=%d clicks=%d", impressions, clicks)
+	if err := db.Get(&conversions, `SELECT count(*) FROM delivery_outbox WHERE event_type = 'ad_conversion'`); err != nil {
+		t.Fatalf("count conversions: %v", err)
+	}
+	if impressions != 1 || clicks != 1 || conversions != 1 {
+		t.Fatalf("idempotency failed: impressions=%d clicks=%d conversions=%d", impressions, clicks, conversions)
 	}
 }
 

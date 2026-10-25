@@ -360,29 +360,48 @@ class AdDetailScreen extends ConsumerWidget {
                   0,
                   (sum, item) => sum + item.clicks,
                 );
-                return Row(
-                  children: [
-                    Expanded(
-                      child: _MiniMetric(
-                        label: 'Показы',
-                        value: '$impressions',
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MiniMetric(label: 'Клики', value: '$clicks'),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MiniMetric(
-                        label: 'CTR',
-                        value:
-                            impressions == 0
-                                ? '0%'
-                                : '${(clicks / impressions * 100).toStringAsFixed(1)}%',
-                      ),
-                    ),
-                  ],
+                final conversions = points.fold<int>(
+                  0,
+                  (sum, item) => sum + item.conversions,
+                );
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final itemWidth = (constraints.maxWidth - 10) / 2;
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        SizedBox(
+                          width: itemWidth,
+                          child: _MiniMetric(
+                            label: 'Показы',
+                            value: '$impressions',
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _MiniMetric(label: 'Клики', value: '$clicks'),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _MiniMetric(
+                            label: 'Конверсии',
+                            value: '$conversions',
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _MiniMetric(
+                            label: 'CTR',
+                            value:
+                                impressions == 0
+                                    ? '0%'
+                                    : '${(clicks / impressions * 100).toStringAsFixed(1)}%',
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             ),

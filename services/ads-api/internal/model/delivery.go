@@ -72,8 +72,11 @@ type Delivery struct {
 	VisitorID         *string          `db:"visitor_id" json:"visitor_id,omitempty"`
 	DestinationURL    string           `db:"destination_url" json:"destination_url"`
 	CreatedAt         time.Time        `db:"created_at" json:"created_at"`
+	ImpressedAt       *time.Time       `db:"impressed_at" json:"impressed_at,omitempty"`
 	ClickedAt         *time.Time       `db:"clicked_at" json:"clicked_at,omitempty"`
+	ImpressionURL     string           `db:"-" json:"impression_url"`
 	ClickURL          string           `db:"-" json:"click_url"`
+	ConversionURL     string           `db:"-" json:"conversion_url"`
 	SiteID            int64            `db:"site_id" json:"site_id"`
 	PlacementID       int64            `db:"placement_id" json:"placement_id"`
 	FormatID          int64            `db:"format_id" json:"format_id"`
@@ -97,27 +100,49 @@ type Delivery struct {
 }
 
 type DeliveryEvent struct {
-	ID                string    `db:"id" json:"event_id"`
-	DeliveryID        string    `db:"delivery_id" json:"delivery_id"`
-	EventType         string    `db:"event_type" json:"type"`
-	CampaignID        int64     `db:"campaign_id" json:"campaign_id"`
-	AdID              int64     `db:"ad_id" json:"ad_id"`
-	CreativeID        int64     `db:"creative_id" json:"creative_id"`
-	Placement         string    `db:"placement" json:"placement"`
-	OccurredAt        time.Time `db:"occurred_at" json:"occurred_at"`
-	SiteID            int64     `db:"site_id" json:"site_id"`
-	PlacementID       int64     `db:"placement_id" json:"placement_id"`
-	FormatID          int64     `db:"format_id" json:"format_id"`
-	PlacementCode     string    `db:"placement_code" json:"placement_code,omitempty"`
-	FormatCode        string    `db:"format_code" json:"format_code,omitempty"`
-	AudienceAge       int       `db:"audience_age" json:"audience_age"`
-	AudienceGender    string    `db:"audience_gender" json:"audience_gender,omitempty"`
-	AudienceInterests string    `db:"audience_interests" json:"audience_interests,omitempty"`
-	Country           string    `db:"country" json:"country,omitempty"`
-	Region            string    `db:"region" json:"region,omitempty"`
-	City              string    `db:"city" json:"city,omitempty"`
-	DeviceType        string    `db:"device_type" json:"device_type,omitempty"`
-	OperatingSystem   string    `db:"operating_system" json:"operating_system,omitempty"`
-	BidCPM            float64   `db:"bid_cpm" json:"bid_cpm"`
-	Cost              float64   `db:"cost" json:"cost"`
+	ID                 string    `db:"id" json:"event_id"`
+	DeliveryID         string    `db:"delivery_id" json:"delivery_id"`
+	EventType          string    `db:"event_type" json:"type"`
+	CampaignID         int64     `db:"campaign_id" json:"campaign_id"`
+	AdID               int64     `db:"ad_id" json:"ad_id"`
+	CreativeID         int64     `db:"creative_id" json:"creative_id"`
+	Placement          string    `db:"placement" json:"placement"`
+	OccurredAt         time.Time `db:"occurred_at" json:"occurred_at"`
+	SiteID             int64     `db:"site_id" json:"site_id"`
+	PlacementID        int64     `db:"placement_id" json:"placement_id"`
+	FormatID           int64     `db:"format_id" json:"format_id"`
+	PlacementCode      string    `db:"placement_code" json:"placement_code,omitempty"`
+	FormatCode         string    `db:"format_code" json:"format_code,omitempty"`
+	AudienceAge        int       `db:"audience_age" json:"audience_age"`
+	AudienceGender     string    `db:"audience_gender" json:"audience_gender,omitempty"`
+	AudienceInterests  string    `db:"audience_interests" json:"audience_interests,omitempty"`
+	Country            string    `db:"country" json:"country,omitempty"`
+	Region             string    `db:"region" json:"region,omitempty"`
+	City               string    `db:"city" json:"city,omitempty"`
+	DeviceType         string    `db:"device_type" json:"device_type,omitempty"`
+	OperatingSystem    string    `db:"operating_system" json:"operating_system,omitempty"`
+	BidCPM             float64   `db:"bid_cpm" json:"bid_cpm"`
+	Cost               float64   `db:"cost" json:"cost"`
+	ConversionID       string    `db:"conversion_id" json:"conversion_id,omitempty"`
+	ConversionType     string    `db:"conversion_type" json:"conversion_type,omitempty"`
+	ConversionValue    float64   `db:"conversion_value" json:"conversion_value,omitempty"`
+	ConversionCurrency string    `db:"conversion_currency" json:"conversion_currency,omitempty"`
+}
+
+type ConversionRequest struct {
+	EventID        string  `json:"event_id"`
+	ConversionType string  `json:"conversion_type"`
+	Value          float64 `json:"value"`
+	Currency       string  `json:"currency"`
+}
+
+type TrackingResult struct {
+	DeliveryID         string    `db:"delivery_id" json:"delivery_id"`
+	EventID            string    `db:"event_id" json:"event_id"`
+	EventType          string    `db:"event_type" json:"event_type"`
+	Recorded           bool      `db:"recorded" json:"recorded"`
+	OccurredAt         time.Time `db:"occurred_at" json:"occurred_at"`
+	ConversionType     string    `db:"conversion_type" json:"conversion_type,omitempty"`
+	ConversionValue    float64   `db:"conversion_value" json:"conversion_value,omitempty"`
+	ConversionCurrency string    `db:"conversion_currency" json:"conversion_currency,omitempty"`
 }

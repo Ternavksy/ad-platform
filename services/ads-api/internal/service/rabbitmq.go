@@ -136,9 +136,13 @@ func (r *RabbitMQService) PublishAdUpdated(ctx context.Context, adID string, cam
 }
 
 func (r *RabbitMQService) PublishDeliveryEvent(ctx context.Context, event model.DeliveryEvent) error {
-	routingKey := "ad.impression"
-	if event.EventType == "ad_click" {
-		routingKey = "ad.click"
+	routingKey := map[string]string{
+		"ad_impression": "ad.impression",
+		"ad_click":      "ad.click",
+		"ad_conversion": "ad.conversion",
+	}[event.EventType]
+	if routingKey == "" {
+		return fmt.Errorf("unsupported delivery event type %q", event.EventType)
 	}
 	return r.publish(ctx, routingKey, event)
 }

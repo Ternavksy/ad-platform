@@ -31,8 +31,17 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       (sum, item) => sum + item.impressions,
     );
     final clicks = points.fold<int>(0, (sum, item) => sum + item.clicks);
+    final conversions = points.fold<int>(
+      0,
+      (sum, item) => sum + item.conversions,
+    );
+    final conversionValue = points.fold<double>(
+      0,
+      (sum, item) => sum + item.conversionValue,
+    );
     final cost = points.fold<double>(0, (sum, item) => sum + item.cost);
     final ctr = impressions == 0 ? 0.0 : clicks / impressions * 100;
+    final conversionRate = clicks == 0 ? 0.0 : conversions / clicks * 100;
 
     return AdaptivePageBody(
       child: RefreshIndicator(
@@ -105,8 +114,32 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     children: [
                       Expanded(
                         child: _AnalyticsMetric(
-                          icon: Icons.percent_rounded,
+                          icon: Icons.shopping_bag_outlined,
                           color: AppColors.amber,
+                          label: 'Конверсии',
+                          value: NumberFormat.compact(
+                            locale: 'ru',
+                          ).format(conversions),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AnalyticsMetric(
+                          icon: Icons.trending_up_rounded,
+                          color: AppColors.coral,
+                          label: 'Конверсия кликов',
+                          value: '${conversionRate.toStringAsFixed(2)}%',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AnalyticsMetric(
+                          icon: Icons.percent_rounded,
+                          color: AppColors.primary,
                           label: 'CTR',
                           value: '${ctr.toStringAsFixed(2)}%',
                         ),
@@ -121,6 +154,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  _AnalyticsMetric(
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: AppColors.teal,
+                    label: 'Ценность конверсий',
+                    value: moneyFormat.format(conversionValue),
                   ),
                   const SizedBox(height: 24),
                   SurfaceCard(
@@ -213,13 +253,17 @@ class _AnalyticsMetric extends StatelessWidget {
       children: [
         Icon(icon, color: color, size: 22),
         const SizedBox(height: 12),
-        Text(
-          value,
-          maxLines: 1,
-          style: const TextStyle(
-            color: AppColors.ink,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            maxLines: 1,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
         const SizedBox(height: 3),

@@ -39,17 +39,17 @@ def test_analytics_endpoints_serialize_all_entity_types(monkeypatch):
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_ad_stats",
-		lambda **_: [("2026-10-24", 7, 11, 13, 100, 8, 12.5)],
+		lambda **_: [("2026-10-24", 7, 11, 13, 100, 8, 3, 1499.9, 12.5)],
 	)
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_campaign_stats",
-		lambda **_: [("2026-10-24", 7, 100, 8, 12.5)],
+		lambda **_: [("2026-10-24", 7, 100, 8, 3, 1499.9, 12.5)],
 	)
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_creative_stats",
-		lambda **_: [("2026-10-24", 13, 100, 8, 12.5)],
+		lambda **_: [("2026-10-24", 13, 100, 8, 3, 1499.9, 12.5)],
 	)
 
 	client = TestClient(app)
@@ -59,6 +59,8 @@ def test_analytics_endpoints_serialize_all_entity_types(monkeypatch):
 
 	assert ad.status_code == 200
 	assert ad.json()[0]["campaign_id"] == 7
+	assert ad.json()[0]["total_conversions"] == 3
+	assert ad.json()[0]["total_conversion_value"] == 1499.9
 	assert campaign.status_code == 200
 	assert campaign.json()[0]["campaign_id"] == 7
 	assert creative.status_code == 200
@@ -93,6 +95,25 @@ def test_delivery_events_are_the_only_events_that_change_metrics(monkeypatch):
 		}
 	)
 	assert inserted[0][0:2] == ("event-1", "delivery-1")
-	assert inserted[0][20:22] == (1, 0)
-	assert inserted[0][22] == 0.0125
+	assert inserted[0][20:23] == (1, 0, 0)
+	assert inserted[0][26] == 0.0125
+
+	handle(
+		{
+			"type": "ad_conversion",
+			"event_id": "event-2",
+			"delivery_id": "delivery-1",
+			"campaign_id": 7,
+			"ad_id": 11,
+			"creative_id": 13,
+			"placement": "feed",
+			"conversion_id": "order-42",
+			"conversion_type": "purchase",
+			"conversion_value": 1499.9,
+			"conversion_currency": "RUB",
+			"occurred_at": "2026-10-24T10:05:00Z",
+		}
+	)
+	assert inserted[1][20:23] == (0, 0, 1)
+	assert inserted[1][23:26] == (1499.9, "purchase", "RUB")
 

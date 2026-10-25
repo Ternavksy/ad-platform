@@ -173,8 +173,10 @@ func main() {
 	r.DELETE("/placements/:id", inventoryHandler.DeletePlacement)
 
 	r.POST("/delivery/select", deliveryHandler.Select)
+	r.POST("/delivery/:id/impression", deliveryHandler.Impression)
 	r.POST("/delivery/:id/click", deliveryHandler.Click)
 	r.GET("/delivery/:id/click", deliveryHandler.ClickAndRedirect)
+	r.POST("/delivery/:id/conversion", deliveryHandler.Conversion)
 
 	srv := &http.Server{
 		Addr:    ":8080",

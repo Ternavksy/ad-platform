@@ -111,6 +111,7 @@ func (s *DeliveryStore) GetByID(ctx context.Context, id string) (*model.Delivery
 		       site_id, placement_id, format_id, placement_code, format_code,
 		       format_width, format_height, audience_age, audience_gender,
 		       audience_interests, country, region, city, device_type, operating_system,
+		       source_ip_hash, user_agent_hash, click_is_fraud, click_fraud_reason,
 		       bid_cpm, cost
 		FROM ad_deliveries
 		WHERE id = ?
@@ -159,8 +160,8 @@ func (s *DeliveryStore) Create(ctx context.Context, item *model.Delivery) error 
 			 site_id, placement_id, format_id, placement_code, format_code,
 			 format_width, format_height, audience_age, audience_gender,
 			 audience_interests, country, region, city, device_type, operating_system,
-			 bid_cpm, cost)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 source_ip_hash, user_agent_hash, bid_cpm, cost)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.CampaignID, item.AdID, item.CreativeID, item.Title,
 		item.Content, item.CreativeMediaType, item.CreativeMediaURL, item.CreativeMIMEType,
 		item.CreativeFileName, item.CreativeFileSize, item.Placement, item.VisitorID,
@@ -168,7 +169,7 @@ func (s *DeliveryStore) Create(ctx context.Context, item *model.Delivery) error 
 		item.SiteID, item.PlacementID, item.FormatID, item.PlacementCode, item.FormatCode,
 		item.FormatWidth, item.FormatHeight, item.AudienceAge, item.AudienceGender,
 		item.AudienceInterests, item.Country, item.Region, item.City, item.DeviceType,
-		item.OperatingSystem, item.BidCPM, item.Cost)
+		item.OperatingSystem, item.SourceIPHash, item.UserAgentHash, item.BidCPM, item.Cost)
 	if err != nil {
 		return err
 	}
@@ -203,11 +204,17 @@ func (s *DeliveryStore) TrackClick(ctx context.Context, id string, now time.Time
 	if err != nil {
 		return nil, nil, err
 	}
+	fraudReason, err := clickFraudReason(ctx, tx, item, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	isFraud := fraudReason != ""
 
 	result, err := tx.ExecContext(ctx, `
-		UPDATE ad_deliveries SET clicked_at = ?
+		UPDATE ad_deliveries
+		SET clicked_at = ?, click_is_fraud = ?, click_fraud_reason = ?
 		WHERE id = ? AND clicked_at IS NULL
-	`, now, id)
+	`, now, isFraud, fraudReason, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -223,6 +230,8 @@ func (s *DeliveryStore) TrackClick(ctx context.Context, id string, now time.Time
 	var tracked *model.TrackingResult
 	if rows == 1 {
 		event := deliveryEvent(item, "ad_click", now)
+		event.IsFraud = isFraud
+		event.FraudReason = fraudReason
 		if err := insertEvent(ctx, tx, &event); err != nil {
 			return nil, nil, err
 		}
@@ -245,6 +254,8 @@ func (s *DeliveryStore) TrackConversion(
 	id string,
 	req model.ConversionRequest,
 	now time.Time,
+	attributionModel string,
+	attributionWindow int,
 ) (*model.Delivery, *model.TrackingResult, error) {
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -261,14 +272,17 @@ func (s *DeliveryStore) TrackConversion(
 	err = tx.GetContext(ctx, &existing, `
 		SELECT delivery_id, event_id, 'ad_conversion' AS event_type,
 		       0 AS recorded, occurred_at, conversion_type,
-		       value AS conversion_value, currency AS conversion_currency
+		       value AS conversion_value, currency AS conversion_currency,
+		       attribution_model, attribution_window_hours,
+		       is_fraud, fraud_reason
 		FROM delivery_conversions
 		WHERE delivery_id = ? AND event_id = ?
 	`, id, req.EventID)
 	if err == nil {
 		if existing.ConversionType != req.ConversionType ||
 			existing.ConversionValue != req.Value ||
-			existing.ConversionCurrency != req.Currency {
+			existing.ConversionCurrency != req.Currency ||
+			existing.AttributionModel != attributionModel {
 			return nil, nil, ErrEventConflict
 		}
 		return item, &existing, nil
@@ -277,11 +291,19 @@ func (s *DeliveryStore) TrackConversion(
 		return nil, nil, err
 	}
 
+	fraudReason, err := conversionFraudReason(ctx, tx, item, req, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	isFraud := fraudReason != ""
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO delivery_conversions
-			(delivery_id, event_id, conversion_type, value, currency, occurred_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, req.EventID, req.ConversionType, req.Value, req.Currency, now)
+			(delivery_id, event_id, conversion_type, value, currency, occurred_at,
+			 attribution_model, attribution_window_hours, is_fraud, fraud_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id, req.EventID, req.ConversionType, req.Value, req.Currency, now,
+		attributionModel, attributionWindow, isFraud, fraudReason)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -290,6 +312,10 @@ func (s *DeliveryStore) TrackConversion(
 	event.ConversionType = req.ConversionType
 	event.ConversionValue = req.Value
 	event.ConversionCurrency = req.Currency
+	event.AttributionModel = attributionModel
+	event.AttributionWindow = attributionWindow
+	event.IsFraud = isFraud
+	event.FraudReason = fraudReason
 	if err := insertEvent(ctx, tx, &event); err != nil {
 		return nil, nil, err
 	}
@@ -297,6 +323,108 @@ func (s *DeliveryStore) TrackConversion(
 		return nil, nil, err
 	}
 	return item, trackingResult(event, true), nil
+}
+
+func (s *DeliveryStore) FindAttributedDelivery(
+	ctx context.Context,
+	visitorID string,
+	now time.Time,
+	clickWindow time.Duration,
+	viewWindow time.Duration,
+) (*model.Delivery, string, int, error) {
+	var id string
+	err := s.db.GetContext(ctx, &id, `
+		SELECT id
+		FROM ad_deliveries
+		WHERE visitor_id = ?
+		  AND clicked_at IS NOT NULL
+		  AND click_is_fraud = 0
+		  AND clicked_at BETWEEN ? AND ?
+		ORDER BY clicked_at DESC, id DESC
+		LIMIT 1
+	`, visitorID, now.Add(-clickWindow), now)
+	if err == nil {
+		item, getErr := s.GetByID(ctx, id)
+		return item, "last_click", int(clickWindow / time.Hour), getErr
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, "", 0, err
+	}
+	err = s.db.GetContext(ctx, &id, `
+		SELECT id
+		FROM ad_deliveries
+		WHERE visitor_id = ?
+		  AND impressed_at IS NOT NULL
+		  AND impressed_at BETWEEN ? AND ?
+		ORDER BY impressed_at DESC, id DESC
+		LIMIT 1
+	`, visitorID, now.Add(-viewWindow), now)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	item, err := s.GetByID(ctx, id)
+	return item, "view_through", int(viewWindow / time.Hour), err
+}
+
+func clickFraudReason(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	item *model.Delivery,
+	now time.Time,
+) (string, error) {
+	if item.VisitorID != nil && *item.VisitorID != "" {
+		var count int
+		if err := tx.GetContext(ctx, &count, `
+			SELECT COUNT(*) FROM ad_deliveries
+			WHERE visitor_id = ? AND clicked_at >= ?
+		`, *item.VisitorID, now.Add(-time.Minute)); err != nil {
+			return "", err
+		}
+		if count >= 20 {
+			return "click_velocity", nil
+		}
+	}
+	if item.SourceIPHash != "" {
+		var count int
+		if err := tx.GetContext(ctx, &count, `
+			SELECT COUNT(*) FROM ad_deliveries
+			WHERE source_ip_hash = ? AND clicked_at >= ?
+		`, item.SourceIPHash, now.Add(-time.Minute)); err != nil {
+			return "", err
+		}
+		if count >= 100 {
+			return "ip_click_velocity", nil
+		}
+	}
+	return "", nil
+}
+
+func conversionFraudReason(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	item *model.Delivery,
+	req model.ConversionRequest,
+	now time.Time,
+) (string, error) {
+	if req.Value > 10_000_000 {
+		return "extreme_conversion_value", nil
+	}
+	if item.VisitorID == nil || *item.VisitorID == "" {
+		return "", nil
+	}
+	var count int
+	if err := tx.GetContext(ctx, &count, `
+		SELECT COUNT(*)
+		FROM delivery_conversions dc
+		JOIN ad_deliveries d ON d.id = dc.delivery_id
+		WHERE d.visitor_id = ? AND dc.occurred_at >= ?
+	`, *item.VisitorID, now.Add(-time.Hour)); err != nil {
+		return "", err
+	}
+	if count >= 10 {
+		return "conversion_velocity", nil
+	}
+	return "", nil
 }
 
 func ensureImpression(
@@ -345,6 +473,7 @@ func getDeliveryTx(ctx context.Context, tx *sqlx.Tx, id string) (*model.Delivery
 		       site_id, placement_id, format_id, placement_code, format_code,
 		       format_width, format_height, audience_age, audience_gender,
 		       audience_interests, country, region, city, device_type, operating_system,
+		       source_ip_hash, user_agent_hash, click_is_fraud, click_fraud_reason,
 		       bid_cpm, cost
 		FROM ad_deliveries WHERE id = ?
 	`, id)
@@ -360,7 +489,8 @@ func getTrackingResultTx(
 	var result model.TrackingResult
 	err := tx.GetContext(ctx, &result, `
 		SELECT delivery_id, id AS event_id, event_type, 0 AS recorded, occurred_at,
-		       conversion_type, conversion_value, conversion_currency
+		       conversion_type, conversion_value, conversion_currency,
+		       attribution_model, attribution_window_hours, is_fraud, fraud_reason
 		FROM delivery_outbox
 		WHERE delivery_id = ? AND event_type = ?
 		ORDER BY occurred_at, id
@@ -410,6 +540,10 @@ func trackingResult(event model.DeliveryEvent, recorded bool) *model.TrackingRes
 		ConversionType:     event.ConversionType,
 		ConversionValue:    event.ConversionValue,
 		ConversionCurrency: event.ConversionCurrency,
+		AttributionModel:   event.AttributionModel,
+		AttributionWindow:  event.AttributionWindow,
+		IsFraud:            event.IsFraud,
+		FraudReason:        event.FraudReason,
 	}
 }
 
@@ -421,15 +555,17 @@ func insertEvent(ctx context.Context, tx *sqlx.Tx, event *model.DeliveryEvent) e
 			 placement_code, format_code, audience_age, audience_gender,
 			 audience_interests, country, region, city, device_type, operating_system,
 			 bid_cpm, cost, conversion_id, conversion_type, conversion_value,
-			 conversion_currency)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 conversion_currency, attribution_model, attribution_window_hours,
+			 is_fraud, fraud_reason)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, event.ID, event.DeliveryID, event.EventType, event.CampaignID,
 		event.AdID, event.CreativeID, event.Placement, event.OccurredAt,
 		event.SiteID, event.PlacementID, event.FormatID, event.PlacementCode, event.FormatCode,
 		event.AudienceAge, event.AudienceGender, event.AudienceInterests, event.Country,
 		event.Region, event.City, event.DeviceType, event.OperatingSystem,
 		event.BidCPM, event.Cost, event.ConversionID, event.ConversionType,
-		event.ConversionValue, event.ConversionCurrency)
+		event.ConversionValue, event.ConversionCurrency, event.AttributionModel,
+		event.AttributionWindow, event.IsFraud, event.FraudReason)
 	return err
 }
 
@@ -441,7 +577,8 @@ func (s *DeliveryStore) ListPendingEvents(ctx context.Context, limit int) ([]mod
 		       placement_code, format_code, audience_age, audience_gender,
 		       audience_interests, country, region, city, device_type, operating_system,
 		       bid_cpm, cost, conversion_id, conversion_type, conversion_value,
-		       conversion_currency
+		       conversion_currency, attribution_model, attribution_window_hours,
+		       is_fraud, fraud_reason
 		FROM delivery_outbox
 		WHERE published_at IS NULL
 		ORDER BY occurred_at, id

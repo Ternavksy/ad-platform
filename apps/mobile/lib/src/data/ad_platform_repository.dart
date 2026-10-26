@@ -1,7 +1,15 @@
+import 'dart:async';
+
 import 'package:ad_platform_mobile/src/core/api_client.dart';
 import 'package:ad_platform_mobile/src/core/api_config.dart';
 import 'package:ad_platform_mobile/src/domain/models.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class MfaRequiredException implements Exception {
+  const MfaRequiredException(this.challenge);
+
+  final MfaChallenge challenge;
+}
 
 class AdPlatformRepository {
   AdPlatformRepository({
@@ -12,13 +20,49 @@ class AdPlatformRepository {
   }) : _auth = auth ?? ApiClient(ApiConfig.authBaseUrl),
        _ads = ads ?? ApiClient(ApiConfig.adsBaseUrl),
        _analytics = analytics ?? ApiClient(ApiConfig.analyticsBaseUrl),
-       _storage = storage ?? const FlutterSecureStorage();
+       _storage = storage ?? const FlutterSecureStorage() {
+    for (final transport in [_auth, _ads, _analytics]) {
+      if (transport is ApiClient) {
+        transport.setUnauthorizedHandler(_refreshAfterUnauthorized);
+      }
+    }
+  }
 
   static const _tokenKey = 'ad_platform_access_token';
+  static const _refreshTokenKey = 'ad_platform_refresh_token';
   final ApiTransport _auth;
   final ApiTransport _ads;
   final ApiTransport _analytics;
   final FlutterSecureStorage _storage;
+  final _sessionInvalidated = StreamController<void>.broadcast();
+  Future<bool>? _refreshingSession;
+
+  Stream<void> get sessionInvalidated => _sessionInvalidated.stream;
+
+  Future<bool> _refreshAfterUnauthorized() async {
+    final existing = _refreshingSession;
+    if (existing != null) return existing;
+    final future = _performUnauthorizedRefresh();
+    _refreshingSession = future;
+    try {
+      return await future;
+    } finally {
+      _refreshingSession = null;
+    }
+  }
+
+  Future<bool> _performUnauthorizedRefresh() async {
+    try {
+      await refreshSession();
+      return true;
+    } catch (_) {
+      await _clearSession();
+      _sessionInvalidated.add(null);
+      return false;
+    }
+  }
+
+  void dispose() => _sessionInvalidated.close();
 
   void _setToken(String? value) {
     _auth.setToken(value);
@@ -33,8 +77,13 @@ class AdPlatformRepository {
     try {
       return await currentUser();
     } catch (_) {
-      await logout();
-      return null;
+      try {
+        await refreshSession();
+        return await currentUser();
+      } catch (_) {
+        await _clearSession();
+        return null;
+      }
     }
   }
 
@@ -45,10 +94,57 @@ class AdPlatformRepository {
               data: {'email': email.trim(), 'password': password},
             )
             as Map<String, dynamic>;
-    final value = json['access_token'] as String;
-    _setToken(value);
-    await _storage.write(key: _tokenKey, value: value);
+    if (json['mfa_required'] == true || json['mfa_setup_required'] == true) {
+      throw MfaRequiredException(
+        MfaChallenge(
+          token: json['mfa_challenge'] as String,
+          setupRequired: json['mfa_setup_required'] as bool? ?? false,
+          secret: json['mfa_secret'] as String?,
+          otpauthUri: json['otpauth_uri'] as String?,
+        ),
+      );
+    }
+    await _saveTokens(json);
     return currentUser();
+  }
+
+  Future<({AppUser user, List<String> recoveryCodes})> confirmMfa(
+    MfaChallenge challenge,
+    String code,
+  ) async {
+    final json =
+        await _auth.post(
+              '/auth/mfa/confirm',
+              data: {'challenge_token': challenge.token, 'code': code.trim()},
+            )
+            as Map<String, dynamic>;
+    await _saveTokens(json);
+    return (
+      user: await currentUser(),
+      recoveryCodes:
+          (json['recovery_codes'] as List? ?? const [])
+              .map((item) => item.toString())
+              .toList(),
+    );
+  }
+
+  Future<void> _saveTokens(Map<String, dynamic> json) async {
+    final access = json['access_token'] as String;
+    final refresh = json['refresh_token'] as String;
+    _setToken(access);
+    await Future.wait([
+      _storage.write(key: _tokenKey, value: access),
+      _storage.write(key: _refreshTokenKey, value: refresh),
+    ]);
+  }
+
+  Future<void> refreshSession() async {
+    final refresh = await _storage.read(key: _refreshTokenKey);
+    if (refresh == null) throw const ApiException('Сессия истекла');
+    final json =
+        await _auth.post('/auth/refresh', data: {'refresh_token': refresh})
+            as Map<String, dynamic>;
+    await _saveTokens(json);
   }
 
   Future<AppUser> register(String email, String password) async {
@@ -65,8 +161,160 @@ class AdPlatformRepository {
   }
 
   Future<void> logout() async {
+    final refresh = await _storage.read(key: _refreshTokenKey);
+    if (refresh != null) {
+      try {
+        await _auth.post('/auth/logout', data: {'refresh_token': refresh});
+      } catch (_) {
+        // Local logout must still complete when the session already expired.
+      }
+    }
+    await _clearSession();
+  }
+
+  Future<void> logoutAll() async {
+    try {
+      await _auth.post('/auth/logout-all');
+    } finally {
+      await _clearSession();
+    }
+  }
+
+  Future<void> _clearSession() async {
     _setToken(null);
-    await _storage.delete(key: _tokenKey);
+    await Future.wait([
+      _storage.delete(key: _tokenKey),
+      _storage.delete(key: _refreshTokenKey),
+    ]);
+  }
+
+  Future<AdminDashboard> getAdminDashboard() async {
+    final json = await _auth.get('/admin/dashboard') as Map<String, dynamic>;
+    return AdminDashboard.fromJson(json);
+  }
+
+  Future<({List<AdminUser> items, int? nextCursor})> getAdminUsers({
+    String? query,
+    String? status,
+    String? role,
+    int? cursor,
+  }) async {
+    final json =
+        await _auth.get(
+              '/admin/users',
+              query: {
+                if (query?.trim().isNotEmpty == true) 'query': query!.trim(),
+                if (status?.isNotEmpty == true) 'status': status,
+                if (role?.isNotEmpty == true) 'role': role,
+                if (cursor != null) 'cursor': cursor,
+              },
+            )
+            as Map<String, dynamic>;
+    return (
+      items:
+          (json['items'] as List)
+              .cast<Map<String, dynamic>>()
+              .map(AdminUser.fromJson)
+              .toList(),
+      nextCursor: (json['next_cursor'] as num?)?.toInt(),
+    );
+  }
+
+  Future<AdminUser> getAdminUser(int userId) async {
+    final json =
+        await _auth.get('/admin/users/$userId') as Map<String, dynamic>;
+    return AdminUser.fromJson(json);
+  }
+
+  Future<List<AdminAuditEvent>> getAdminAudit({int? userId}) async {
+    final data =
+        userId == null
+            ? await _auth.get('/admin/audit')
+            : await _auth.get('/admin/users/$userId/audit');
+    final items =
+        data is Map<String, dynamic> ? data['items'] as List : data as List;
+    return items
+        .cast<Map<String, dynamic>>()
+        .map(AdminAuditEvent.fromJson)
+        .toList();
+  }
+
+  Future<AdminUser> setAdminUserStatus(
+    AdminUser user,
+    String action, {
+    required String reason,
+    required String mfaCode,
+    DateTime? suspendedUntil,
+  }) async {
+    final json =
+        await _auth.post(
+              '/admin/users/${user.id}/$action',
+              data: {
+                'reason': reason.trim(),
+                'row_version': user.rowVersion,
+                'mfa_code': mfaCode.trim(),
+                if (suspendedUntil != null)
+                  'suspended_until': suspendedUntil.toUtc().toIso8601String(),
+              },
+            )
+            as Map<String, dynamic>;
+    return AdminUser.fromJson(json);
+  }
+
+  Future<AdminUser> updateAdminUserRoles(
+    AdminUser user,
+    List<String> roles, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    final json =
+        await _auth.put(
+              '/admin/users/${user.id}/roles',
+              data: {
+                'roles': roles,
+                'reason': reason.trim(),
+                'row_version': user.rowVersion,
+                'mfa_code': mfaCode.trim(),
+              },
+            )
+            as Map<String, dynamic>;
+    return AdminUser.fromJson(json);
+  }
+
+  Future<AdminUser> revokeAdminUserSessions(
+    AdminUser user, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    final json =
+        await _auth.post(
+              '/admin/users/${user.id}/revoke-sessions',
+              data: {
+                'reason': reason.trim(),
+                'row_version': user.rowVersion,
+                'mfa_code': mfaCode.trim(),
+              },
+            )
+            as Map<String, dynamic>;
+    return AdminUser.fromJson(json['user'] as Map<String, dynamic>);
+  }
+
+  Future<AdminUser> requestAdminPasswordReset(
+    AdminUser user, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    final json =
+        await _auth.post(
+              '/admin/users/${user.id}/password-reset',
+              data: {
+                'reason': reason.trim(),
+                'row_version': user.rowVersion,
+                'mfa_code': mfaCode.trim(),
+              },
+            )
+            as Map<String, dynamic>;
+    return AdminUser.fromJson(json['user'] as Map<String, dynamic>);
   }
 
   Future<double> getBalance(int userId) async {
@@ -410,16 +658,9 @@ class AdPlatformRepository {
         'placement': placement,
         'placement_code': placementCode,
         'visitor_id': visitorId,
-        'audience': {
-          'age': age,
-          'gender': gender,
-          'interests': interests,
-        },
+        'audience': {'age': age, 'gender': gender, 'interests': interests},
         'geography': {'country': country, 'region': region, 'city': city},
-        'device': {
-          'type': deviceType,
-          'operating_system': operatingSystem,
-        },
+        'device': {'type': deviceType, 'operating_system': operatingSystem},
       },
     );
     if (json == null) return null;
@@ -435,8 +676,7 @@ class AdPlatformRepository {
 
   Future<TrackingReceipt> trackClick(String deliveryId) async {
     final json =
-        await _ads.post('/delivery/$deliveryId/click')
-            as Map<String, dynamic>;
+        await _ads.post('/delivery/$deliveryId/click') as Map<String, dynamic>;
     return TrackingReceipt.fromJson(json);
   }
 
@@ -457,6 +697,28 @@ class AdPlatformRepository {
               '/delivery/$deliveryId/conversion',
               data: {
                 'event_id': stableEventId,
+                'conversion_type': conversionType,
+                'value': value,
+                'currency': currency,
+              },
+            )
+            as Map<String, dynamic>;
+    return TrackingReceipt.fromJson(json);
+  }
+
+  Future<TrackingReceipt> trackAttributedConversion(
+    String visitorId, {
+    required String eventId,
+    String conversionType = 'purchase',
+    double value = 0,
+    String currency = '',
+  }) async {
+    final json =
+        await _ads.post(
+              '/attribution/conversion',
+              data: {
+                'visitor_id': visitorId,
+                'event_id': eventId,
                 'conversion_type': conversionType,
                 'value': value,
                 'currency': currency,

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Response
 from app.api.auth import router as auth_router
 from app.api.billing import router as billing_router
+from app.api.admin import router as admin_router
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter
 from app.core.rabbitmq import rabbitmq_service
 import logging
@@ -12,6 +13,7 @@ app = FastAPI(title="Auth API")
 
 app.include_router(auth_router)
 app.include_router(billing_router)
+app.include_router(admin_router)
 
 REQUESTS = Counter('auth_requests_total', 'Total HTTP requests (auth-api)')
 

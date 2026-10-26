@@ -7,6 +7,14 @@ from app.main import app, connect_rabbitmq
 from app.core.rabbitmq import rabbitmq_consumer
 from app.core.rabbitmq import create_message_handler
 from app.api.analytics import clickhouse_client
+from app.core.security import AnalyticsPrincipal, get_current_principal
+
+
+app.dependency_overrides[get_current_principal] = lambda: AnalyticsPrincipal(
+	user_id=1,
+	permissions=["fraud.review"],
+	token="test-token",
+)
 
 
 def test_health():
@@ -36,20 +44,21 @@ def test_rabbitmq_startup_retries(monkeypatch):
 
 
 def test_analytics_endpoints_serialize_all_entity_types(monkeypatch):
+	monkeypatch.setattr("app.api.analytics.assert_resource_access", lambda *_: None)
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_ad_stats",
-		lambda **_: [("2026-10-24", 7, 11, 13, 100, 8, 3, 1499.9, 12.5)],
+		lambda **_: [("2026-10-24", 7, 11, 13, 100, 8, 3, 1499.9, 2, 1, 4, 12.5)],
 	)
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_campaign_stats",
-		lambda **_: [("2026-10-24", 7, 100, 8, 3, 1499.9, 12.5)],
+		lambda **_: [("2026-10-24", 7, 100, 8, 3, 1499.9, 2, 1, 4, 12.5)],
 	)
 	monkeypatch.setattr(
 		clickhouse_client,
 		"get_creative_stats",
-		lambda **_: [("2026-10-24", 13, 100, 8, 3, 1499.9, 12.5)],
+		lambda **_: [("2026-10-24", 13, 100, 8, 3, 1499.9, 2, 1, 4, 12.5)],
 	)
 
 	client = TestClient(app)
@@ -61,6 +70,9 @@ def test_analytics_endpoints_serialize_all_entity_types(monkeypatch):
 	assert ad.json()[0]["campaign_id"] == 7
 	assert ad.json()[0]["total_conversions"] == 3
 	assert ad.json()[0]["total_conversion_value"] == 1499.9
+	assert ad.json()[0]["last_click_conversions"] == 2
+	assert ad.json()[0]["view_through_conversions"] == 1
+	assert ad.json()[0]["total_fraud_events"] == 4
 	assert campaign.status_code == 200
 	assert campaign.json()[0]["campaign_id"] == 7
 	assert creative.status_code == 200
@@ -96,7 +108,7 @@ def test_delivery_events_are_the_only_events_that_change_metrics(monkeypatch):
 	)
 	assert inserted[0][0:2] == ("event-1", "delivery-1")
 	assert inserted[0][20:23] == (1, 0, 0)
-	assert inserted[0][26] == 0.0125
+	assert inserted[0][30] == 0.0125
 
 	handle(
 		{
@@ -111,9 +123,12 @@ def test_delivery_events_are_the_only_events_that_change_metrics(monkeypatch):
 			"conversion_type": "purchase",
 			"conversion_value": 1499.9,
 			"conversion_currency": "RUB",
+			"attribution_model": "last_click",
+			"attribution_window_hours": 168,
 			"occurred_at": "2026-10-24T10:05:00Z",
 		}
 	)
 	assert inserted[1][20:23] == (0, 0, 1)
 	assert inserted[1][23:26] == (1499.9, "purchase", "RUB")
+	assert inserted[1][26:30] == ("last_click", 168, 0, "")
 

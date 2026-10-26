@@ -18,11 +18,17 @@ func NewCampaignHandler(s *service.CampaignService) *CampaignHandler {
 }
 
 func (h *CampaignHandler) Create(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
 	var req model.Campaign
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	req.UserID = principal.UserID
 	if err := h.service.Create(c.Request.Context(), &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -31,12 +37,12 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 }
 
 func (h *CampaignHandler) List(c *gin.Context) {
-	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
-	if err != nil || userID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "valid user_id is required"})
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 		return
 	}
-	items, err := h.service.ListByUser(c.Request.Context(), userID)
+	items, err := h.service.ListByUser(c.Request.Context(), principal.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -51,17 +57,29 @@ func (h *CampaignHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	if !ok || campaign.UserID != principal.UserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
 	c.JSON(http.StatusOK, campaign)
 }
 
 func (h *CampaignHandler) Update(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	current, err := h.service.GetByID(c.Request.Context(), id)
+	if !ok || err != nil || current.UserID != principal.UserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
 	var req model.Campaign
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	req.ID = id
+	req.UserID = principal.UserID
 	if err := h.service.Update(c.Request.Context(), &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -71,6 +89,12 @@ func (h *CampaignHandler) Update(c *gin.Context) {
 
 func (h *CampaignHandler) Delete(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	current, err := h.service.GetByID(c.Request.Context(), id)
+	if !ok || err != nil || current.UserID != principal.UserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

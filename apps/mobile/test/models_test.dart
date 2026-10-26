@@ -2,6 +2,71 @@ import 'package:ad_platform_mobile/src/domain/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('admin user exposes roles permissions and workspaces', () {
+    final user = AppUser.fromJson({
+      'id': 9,
+      'email': 'admin@example.com',
+      'role': 'admin',
+      'roles': ['admin'],
+      'permissions': ['users.read', 'users.block'],
+      'status': 'active',
+      'mfa_enabled': true,
+      'workspaces': ['advertiser', 'admin'],
+    });
+
+    expect(user.canAdminister, isTrue);
+    expect(user.can('users.block'), isTrue);
+    expect(user.mfaEnabled, isTrue);
+  });
+
+  test('admin models parse dashboard user and audit contracts', () {
+    final managed = AdminUser.fromJson({
+      'id': 4,
+      'email': 'user@example.com',
+      'status': 'blocked',
+      'roles': ['user'],
+      'permissions': <String>[],
+      'row_version': 3,
+      'created_at': '2026-10-26T10:00:00Z',
+      'balance': 120.5,
+      'active_sessions': 0,
+      'campaigns': 2,
+      'transactions': 4,
+    });
+    final audit = AdminAuditEvent.fromJson({
+      'id': 8,
+      'actor_user_id': 1,
+      'action': 'user.blocked',
+      'target_type': 'user',
+      'target_id': '4',
+      'reason': 'abuse',
+      'created_at': '2026-10-26T10:01:00Z',
+    });
+    final dashboard = AdminDashboard.fromJson({
+      'total_users': 10,
+      'active_users': 8,
+      'blocked_users': 1,
+      'new_users': 2,
+      'recent_audit': [
+        {
+          'id': 8,
+          'actor_user_id': 1,
+          'action': 'user.blocked',
+          'target_type': 'user',
+          'target_id': '4',
+          'reason': 'abuse',
+          'created_at': '2026-10-26T10:01:00Z',
+        },
+      ],
+    });
+
+    expect(managed.isBlocked, isTrue);
+    expect(managed.rowVersion, 3);
+    expect(audit.action, 'user.blocked');
+    expect(dashboard.totalUsers, 10);
+    expect(dashboard.recentAudit.single.targetId, '4');
+  });
+
   test('domain models parse backend responses', () {
     final user = AppUser.fromJson({'id': 1, 'email': 'user@example.com'});
     final campaign = Campaign.fromJson({
@@ -67,6 +132,9 @@ void main() {
       'total_clicks': 10,
       'total_conversions': 2,
       'total_conversion_value': 1499.9,
+      'last_click_conversions': 1,
+      'view_through_conversions': 1,
+      'total_fraud_events': 3,
       'total_cost': 35,
     });
     final creative = Creative.fromJson({
@@ -109,6 +177,9 @@ void main() {
     expect(analytics.conversions, 2);
     expect(analytics.conversionRate, 20);
     expect(analytics.conversionValue, 1499.9);
+    expect(analytics.lastClickConversions, 1);
+    expect(analytics.viewThroughConversions, 1);
+    expect(analytics.fraudEvents, 3);
     expect(analytics.cost, 35);
     expect(creative.media.isImage, isTrue);
     expect(creative.media.fileName, 'banner.png');
@@ -158,6 +229,9 @@ void main() {
       'conversion_type': 'purchase',
       'conversion_value': 1499.9,
       'conversion_currency': 'RUB',
+      'attribution_model': 'last_click',
+      'attribution_window_hours': 168,
+      'is_fraud': false,
     });
 
     expect(delivery.media.isImage, isTrue);
@@ -165,5 +239,8 @@ void main() {
     expect(receipt.eventType, 'ad_conversion');
     expect(receipt.recorded, isTrue);
     expect(receipt.conversionCurrency, 'RUB');
+    expect(receipt.attributionModel, 'last_click');
+    expect(receipt.attributionWindowHours, 168);
+    expect(receipt.isFraud, isFalse);
   });
 }

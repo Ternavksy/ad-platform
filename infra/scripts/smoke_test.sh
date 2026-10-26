@@ -22,6 +22,10 @@ cleanup() {
                 DELETE FROM placements WHERE id = ${placement_id};
                 DELETE FROM sites WHERE id = ${site_id};
                 DELETE FROM transactions WHERE user_id = ${user_id};
+                DELETE FROM admin_audit_log WHERE actor_user_id IN (${user_id}, ${admin_user_id}) OR target_id IN ("${user_id}", "${admin_user_id}");
+                DELETE FROM user_sessions WHERE user_id IN (${user_id}, ${admin_user_id});
+                DELETE FROM user_roles WHERE user_id IN (${user_id}, ${admin_user_id});
+                UPDATE users SET blocked_by = NULL WHERE blocked_by IN (${user_id}, ${admin_user_id});
                 DELETE FROM balances WHERE user_id = ${user_id};
                 DELETE FROM balances WHERE user_id = ${admin_user_id};
                 DELETE FROM users WHERE id = ${user_id};
@@ -67,8 +71,11 @@ echo "OK: MySQL exporter is connected"
 
 SMOKE_RESULT_FILE="$result_file" python3 - <<'PY'
 import base64
+import hashlib
+import hmac
 import json
 import os
+import struct
 import subprocess
 import time
 import urllib.error
@@ -76,11 +83,13 @@ import urllib.request
 import uuid
 
 
-def request(method, url, payload=None, expected=(200,), token=None):
+def request(method, url, payload=None, expected=(200,), token=None, extra_headers=None):
     body = None if payload is None else json.dumps(payload).encode()
     headers = {"Content-Type": "application/json"}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(
         url,
         data=body,
@@ -98,7 +107,7 @@ def request(method, url, payload=None, expected=(200,), token=None):
         raise RuntimeError(f"{method} {url}: HTTP {exc.code}: {detail}") from exc
 
 
-def upload(url, fields, file_name, content, content_type, method="POST"):
+def upload(url, fields, file_name, content, content_type, method="POST", token=None):
     boundary = f"smoke-{uuid.uuid4().hex}"
     chunks = []
     for name, value in fields.items():
@@ -116,11 +125,14 @@ def upload(url, fields, file_name, content, content_type, method="POST"):
         b"\r\n",
         f"--{boundary}--\r\n".encode(),
     ])
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         url,
         data=b"".join(chunks),
         method=method,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers=headers,
     )
     with urllib.request.urlopen(req, timeout=15) as response:
         return json.loads(response.read().decode())
@@ -141,15 +153,6 @@ with open(result_path, "w") as output:
     json.dump(result, output)
 
 admin_email = f"smoke-admin-{uuid.uuid4().hex}@example.com"
-admin = request(
-    "POST",
-    "http://127.0.0.1:8000/auth/register",
-    {"email": admin_email, "password": password},
-    expected=(201,),
-)
-result["admin_user_id"] = int(admin["id"])
-with open(result_path, "w") as output:
-    json.dump(result, output)
 subprocess.run(
     [
         "docker",
@@ -160,23 +163,64 @@ subprocess.run(
         "infra/docker-compose.yml",
         "exec",
         "-T",
-        "mysql",
-        "sh",
-        "-ec",
-        (
-            'mysql --protocol=tcp -uroot -p"$MYSQL_ROOT_PASSWORD" '
-            '"$MYSQL_DATABASE" -e '
-            f"'UPDATE users SET role = \"admin\" WHERE id = {result['admin_user_id']}'"
-        ),
+        "auth-api",
+        "python",
+        "-m",
+        "app.cli",
+        "create-admin",
+        "--email",
+        admin_email,
     ],
     check=True,
+    input=f"{password}\n{password}\n",
+    text=True,
     stdout=subprocess.DEVNULL,
 )
-admin_token = request(
+admin_login = request(
     "POST",
     "http://127.0.0.1:8000/auth/login",
     {"email": admin_email, "password": password},
-)["access_token"]
+)
+assert admin_login["mfa_setup_required"] is True
+challenge_part = admin_login["mfa_challenge"].split(".")[1]
+challenge_part += "=" * ((4 - len(challenge_part) % 4) % 4)
+result["admin_user_id"] = int(
+    json.loads(base64.urlsafe_b64decode(challenge_part).decode())["sub"]
+)
+with open(result_path, "w") as output:
+    json.dump(result, output)
+
+
+def totp(secret):
+    padded = secret + "=" * ((8 - len(secret) % 8) % 8)
+    key = base64.b32decode(padded)
+    counter = int(time.time()) // 30
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 15
+    value = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7fffffff) % 1000000
+    return f"{value:06d}"
+
+
+admin_mfa_secret = admin_login["mfa_secret"]
+admin_tokens = request(
+    "POST",
+    "http://127.0.0.1:8000/auth/mfa/confirm",
+    {
+        "challenge_token": admin_login["mfa_challenge"],
+        "code": totp(admin_mfa_secret),
+    },
+)
+admin_token = admin_tokens["access_token"]
+admin_profile = request(
+    "GET",
+    "http://127.0.0.1:8000/auth/me",
+    token=admin_token,
+)
+assert admin_profile["roles"] == ["superadmin"]
+assert admin_profile["mfa_enabled"] is True
+assert int(admin_profile["id"]) == result["admin_user_id"]
+with open(result_path, "w") as output:
+    json.dump(result, output)
 
 token = request(
     "POST",
@@ -191,19 +235,39 @@ current_user = request(
     "http://127.0.0.1:8000/auth/me",
     token=access_token,
 )
-assert current_user == {
-    "id": result["user_id"],
-    "email": email,
-    "role": "user",
-}
+assert current_user["id"] == result["user_id"]
+assert current_user["email"] == email
+assert current_user["roles"] == ["user"]
+assert current_user["permissions"] == []
+
+try:
+    request("GET", "http://127.0.0.1:8000/admin/users", token=access_token)
+except RuntimeError as exc:
+    assert "HTTP 403" in str(exc)
+else:
+    raise RuntimeError("regular user accessed an admin endpoint")
+
+try:
+    request(
+        "GET",
+        f"http://127.0.0.1:8000/billing/balance/{result['admin_user_id']}",
+        token=access_token,
+    )
+except RuntimeError as exc:
+    assert "HTTP 403" in str(exc)
+else:
+    raise RuntimeError("regular user accessed another user's financial data")
 
 request(
     "POST",
     "http://127.0.0.1:8000/billing/deposit",
     {"user_id": result["user_id"], "amount": 100, "description": "smoke test"},
+    token=access_token,
 )
 balance = request(
-    "GET", f"http://127.0.0.1:8000/billing/balance/{result['user_id']}"
+    "GET",
+    f"http://127.0.0.1:8000/billing/balance/{result['user_id']}",
+    token=access_token,
 )
 assert balance["balance"] == 100.0
 
@@ -222,6 +286,7 @@ campaign = request(
         },
     },
     expected=(201,),
+    token=access_token,
 )
 result["campaign_id"] = int(campaign["id"])
 assert campaign["budget"] == {
@@ -255,6 +320,7 @@ site = request(
         "status": "active",
     },
     expected=(201,),
+    token=access_token,
 )
 result["site_id"] = int(site["id"])
 
@@ -268,6 +334,7 @@ placement = request(
         "status": "active",
     },
     expected=(201,),
+    token=access_token,
 )
 result["placement_id"] = int(placement["id"])
 result["placement_code"] = placement["code"]
@@ -318,6 +385,7 @@ ad = request(
         },
     },
     expected=(201,),
+    token=access_token,
 )
 result["ad_id"] = int(ad["id"])
 with open(result_path, "w") as output:
@@ -339,6 +407,7 @@ creative = upload(
     "smoke.png",
     image_bytes,
     "image/png",
+    token=access_token,
 )
 assert creative["media"]["type"] == "image"
 assert creative["media"]["mime_type"] == "image/png"
@@ -451,9 +520,17 @@ request(
             },
         },
     },
+    token=access_token,
 )
 
 delivery_request_id = str(uuid.uuid4())
+assert request(
+    "POST",
+    "http://127.0.0.1:8080/delivery/select",
+    delivery_payload(str(uuid.uuid4())),
+    expected=(204,),
+    extra_headers={"User-Agent": "Googlebot/2.1"},
+) is None
 delivery = request(
     "POST",
     "http://127.0.0.1:8080/delivery/select",
@@ -515,7 +592,9 @@ same_delivery = request(
 )
 assert same_delivery["delivery_id"] == delivery["delivery_id"]
 campaign_after_delivery = request(
-    "GET", f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}"
+    "GET",
+    f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}",
+    token=access_token,
 )
 assert abs(campaign_after_delivery["budget"]["spent_total"] - 0.0125) < 0.000001
 assert abs(campaign_after_delivery["budget"]["spent_today"] - 0.0125) < 0.000001
@@ -563,8 +642,40 @@ second_conversion = request(
 assert first_conversion["event_type"] == "ad_conversion"
 assert first_conversion["recorded"] is True
 assert first_conversion["conversion_value"] == 2499.5
+assert first_conversion["attribution_model"] == "last_click"
+assert first_conversion["attribution_window_hours"] == 168
+assert first_conversion["is_fraud"] is False
 assert second_conversion["recorded"] is False
 assert second_conversion["event_id"] == conversion_event_id
+
+attributed_conversion = request(
+    "POST",
+    "http://127.0.0.1:8080/attribution/conversion",
+    {
+        "visitor_id": "smoke-visitor",
+        "event_id": f"signup-{uuid.uuid4()}",
+        "conversion_type": "signup",
+        "value": 0,
+        "currency": "",
+    },
+)
+assert attributed_conversion["delivery_id"] == delivery_request_id
+assert attributed_conversion["attribution_model"] == "last_click"
+assert attributed_conversion["is_fraud"] is False
+
+fraud_conversion = request(
+    "POST",
+    "http://127.0.0.1:8080/attribution/conversion",
+    {
+        "visitor_id": "smoke-visitor",
+        "event_id": f"fraud-{uuid.uuid4()}",
+        "conversion_type": "purchase",
+        "value": 20000000,
+        "currency": "RUB",
+    },
+)
+assert fraud_conversion["is_fraud"] is True
+assert fraud_conversion["fraud_reason"] == "extreme_conversion_value"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -586,27 +697,34 @@ else:
 
 for _ in range(30):
     ad_rows = request(
-        "GET", f"http://127.0.0.1:8100/ads?ad_id={result['ad_id']}"
+        "GET",
+        f"http://127.0.0.1:8100/ads?ad_id={result['ad_id']}",
+        token=access_token,
     )
     campaign_rows = request(
         "GET",
         f"http://127.0.0.1:8100/campaigns?campaign_id={result['campaign_id']}",
+        token=access_token,
     )
     creative_rows = request(
         "GET",
         f"http://127.0.0.1:8100/creatives?creative_id={result['creative_id']}",
+        token=access_token,
     )
     if (
         sum(row["total_impressions"] for row in ad_rows) == 1
         and sum(row["total_clicks"] for row in ad_rows) == 1
-        and sum(row["total_conversions"] for row in ad_rows) == 1
+        and sum(row["total_conversions"] for row in ad_rows) == 2
         and abs(sum(row["total_conversion_value"] for row in ad_rows) - 2499.5) < 0.000001
+        and sum(row["last_click_conversions"] for row in ad_rows) == 2
+        and sum(row["view_through_conversions"] for row in ad_rows) == 0
+        and sum(row["total_fraud_events"] for row in ad_rows) == 1
         and sum(row["total_impressions"] for row in campaign_rows) == 1
         and sum(row["total_clicks"] for row in campaign_rows) == 1
-        and sum(row["total_conversions"] for row in campaign_rows) == 1
+        and sum(row["total_conversions"] for row in campaign_rows) == 2
         and sum(row["total_impressions"] for row in creative_rows) == 1
         and sum(row["total_clicks"] for row in creative_rows) == 1
-        and sum(row["total_conversions"] for row in creative_rows) == 1
+        and sum(row["total_conversions"] for row in creative_rows) == 2
         and abs(sum(row["total_cost"] for row in ad_rows) - 0.0125) < 0.000001
     ):
         break
@@ -614,16 +732,78 @@ for _ in range(30):
 else:
     raise RuntimeError("delivery impression/click/conversion events did not reach ClickHouse")
 
-request("DELETE", f"http://127.0.0.1:8080/creatives/{result['creative_id']}")
-request("DELETE", f"http://127.0.0.1:8080/ads/{result['ad_id']}")
-request("DELETE", f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}")
-request("DELETE", f"http://127.0.0.1:8080/placements/{result['placement_id']}")
-request("DELETE", f"http://127.0.0.1:8080/sites/{result['site_id']}")
+managed = request(
+    "GET",
+    f"http://127.0.0.1:8000/admin/users/{result['user_id']}",
+    token=admin_token,
+)
+blocked = request(
+    "POST",
+    f"http://127.0.0.1:8000/admin/users/{result['user_id']}/block",
+    {
+        "reason": "smoke security check",
+        "row_version": managed["row_version"],
+        "mfa_code": totp(admin_mfa_secret),
+    },
+    token=admin_token,
+)
+assert blocked["status"] == "blocked"
+try:
+    request("GET", "http://127.0.0.1:8000/auth/me", token=access_token)
+except RuntimeError as exc:
+    assert "HTTP 401" in str(exc)
+else:
+    raise RuntimeError("blocked user's existing session remains valid")
+try:
+    request(
+        "GET",
+        f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}",
+        token=access_token,
+    )
+except RuntimeError as exc:
+    assert "HTTP 401" in str(exc)
+else:
+    raise RuntimeError("blocked user's access token remains valid in ads-api")
+
+audit = request(
+    "GET",
+    f"http://127.0.0.1:8000/admin/users/{result['user_id']}/audit",
+    token=admin_token,
+)
+assert audit[0]["action"] == "user.blocked"
+unblocked = request(
+    "POST",
+    f"http://127.0.0.1:8000/admin/users/{result['user_id']}/unblock",
+    {
+        "reason": "smoke check completed",
+        "row_version": blocked["row_version"],
+        "mfa_code": totp(admin_mfa_secret),
+    },
+    token=admin_token,
+)
+assert unblocked["status"] == "active"
+access_token = request(
+    "POST",
+    "http://127.0.0.1:8000/auth/login",
+    {"email": email, "password": password},
+)["access_token"]
+paused_campaign = request(
+    "GET",
+    f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}",
+    token=access_token,
+)
+assert paused_campaign["status"] == "paused"
+
+request("DELETE", f"http://127.0.0.1:8080/creatives/{result['creative_id']}", token=access_token)
+request("DELETE", f"http://127.0.0.1:8080/ads/{result['ad_id']}", token=access_token)
+request("DELETE", f"http://127.0.0.1:8080/campaigns/{result['campaign_id']}", token=access_token)
+request("DELETE", f"http://127.0.0.1:8080/placements/{result['placement_id']}", token=access_token)
+request("DELETE", f"http://127.0.0.1:8080/sites/{result['site_id']}", token=access_token)
 
 try:
-    request("GET", f"http://127.0.0.1:8080/ads/{result['ad_id']}")
+    request("GET", f"http://127.0.0.1:8080/ads/{result['ad_id']}", token=access_token)
 except RuntimeError as exc:
-    if "HTTP 404" not in str(exc):
+    if "HTTP 403" not in str(exc) and "HTTP 404" not in str(exc):
         raise
 else:
     raise RuntimeError("Deleted ad is still available")

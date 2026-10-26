@@ -10,6 +10,8 @@ type DeliveryRequest struct {
 	Audience      AudienceContext  `json:"audience"`
 	Geography     GeographyContext `json:"geography"`
 	Device        DeviceContext    `json:"device"`
+	SourceIP      string           `json:"-"`
+	UserAgent     string           `json:"-"`
 }
 
 type DeliveryCandidate struct {
@@ -97,6 +99,10 @@ type Delivery struct {
 	City              string           `db:"city" json:"-"`
 	DeviceType        string           `db:"device_type" json:"-"`
 	OperatingSystem   string           `db:"operating_system" json:"-"`
+	SourceIPHash      string           `db:"source_ip_hash" json:"-"`
+	UserAgentHash     string           `db:"user_agent_hash" json:"-"`
+	ClickIsFraud      bool             `db:"click_is_fraud" json:"-"`
+	ClickFraudReason  string           `db:"click_fraud_reason" json:"-"`
 }
 
 type DeliveryEvent struct {
@@ -127,6 +133,10 @@ type DeliveryEvent struct {
 	ConversionType     string    `db:"conversion_type" json:"conversion_type,omitempty"`
 	ConversionValue    float64   `db:"conversion_value" json:"conversion_value,omitempty"`
 	ConversionCurrency string    `db:"conversion_currency" json:"conversion_currency,omitempty"`
+	AttributionModel   string    `db:"attribution_model" json:"attribution_model,omitempty"`
+	AttributionWindow  int       `db:"attribution_window_hours" json:"attribution_window_hours,omitempty"`
+	IsFraud            bool      `db:"is_fraud" json:"is_fraud"`
+	FraudReason        string    `db:"fraud_reason" json:"fraud_reason,omitempty"`
 }
 
 type ConversionRequest struct {
@@ -134,6 +144,11 @@ type ConversionRequest struct {
 	ConversionType string  `json:"conversion_type"`
 	Value          float64 `json:"value"`
 	Currency       string  `json:"currency"`
+}
+
+type AttributionConversionRequest struct {
+	ConversionRequest
+	VisitorID string `json:"visitor_id"`
 }
 
 type TrackingResult struct {
@@ -145,4 +160,8 @@ type TrackingResult struct {
 	ConversionType     string    `db:"conversion_type" json:"conversion_type,omitempty"`
 	ConversionValue    float64   `db:"conversion_value" json:"conversion_value,omitempty"`
 	ConversionCurrency string    `db:"conversion_currency" json:"conversion_currency,omitempty"`
+	AttributionModel   string    `db:"attribution_model" json:"attribution_model,omitempty"`
+	AttributionWindow  int       `db:"attribution_window_hours" json:"attribution_window_hours,omitempty"`
+	IsFraud            bool      `db:"is_fraud" json:"is_fraud"`
+	FraudReason        string    `db:"fraud_reason" json:"fraud_reason,omitempty"`
 }

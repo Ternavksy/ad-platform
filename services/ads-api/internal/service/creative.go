@@ -17,6 +17,20 @@ type CreativeService struct {
 	storage *MediaStorage
 }
 
+func (s *CreativeService) OwnedByUser(ctx context.Context, creativeID, userID int64) (bool, error) {
+	if creativeID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.IsOwnedByUser(ctx, creativeID, userID)
+}
+
+func (s *CreativeService) AdOwnedByUser(ctx context.Context, adID, userID int64) (bool, error) {
+	if adID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.AdOwnedByUser(ctx, adID, userID)
+}
+
 func NewCreativeService(s *store.CreativeStore) *CreativeService {
 	return NewCreativeServiceWithStorage(s, NewMediaStorage("/data/media"))
 }

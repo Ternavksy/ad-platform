@@ -1,7 +1,10 @@
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import hmac
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, condecimal
 from sqlalchemy.orm import Session
 
@@ -10,8 +13,22 @@ from app.models.balance import Balance
 from app.models.transaction import Transaction
 from app.models.ad import Ad
 from app.models.creative import Creative
+from app.core.authentication import Principal, get_current_principal
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+
+def require_owner(principal: Principal, user_id: int, permission: str = "billing.read") -> None:
+    if principal.user_id != user_id and permission not in principal.permissions:
+        raise HTTPException(status_code=403, detail="Access to another user's billing is forbidden")
+
+
+def require_service_token(value: str | None) -> None:
+    expected = os.getenv("INTERNAL_SERVICE_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal service authentication is not configured")
+    if not value or not hmac.compare_digest(value, expected):
+        raise HTTPException(status_code=401, detail="Invalid service credentials")
 
 
 class AmountRequest(BaseModel):
@@ -30,7 +47,12 @@ class TransactionResponse(BaseModel):
 
 
 @router.post("/deposit", status_code=200)
-def deposit(data: AmountRequest, db: Session = Depends(get_db)):
+def deposit(
+    data: AmountRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    require_owner(principal, data.user_id, "billing.adjust")
     balance = (
         db.query(Balance)
         .filter(Balance.user_id == data.user_id)
@@ -50,6 +72,7 @@ def deposit(data: AmountRequest, db: Session = Depends(get_db)):
     )
     db.add(transaction)
     db.flush()
+    db.commit()
 
     return {
         "user_id": data.user_id,
@@ -59,7 +82,12 @@ def deposit(data: AmountRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/withdraw", status_code=200)
-def withdraw(data: AmountRequest, db: Session = Depends(get_db)):
+def withdraw(
+    data: AmountRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    require_owner(principal, data.user_id, "billing.adjust")
     balance = (
         db.query(Balance)
         .filter(Balance.user_id == data.user_id)
@@ -81,6 +109,7 @@ def withdraw(data: AmountRequest, db: Session = Depends(get_db)):
     )
     db.add(transaction)
     db.flush()
+    db.commit()
 
     return {
         "user_id": data.user_id,
@@ -90,7 +119,12 @@ def withdraw(data: AmountRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/balance/{user_id}", status_code=200)
-def get_balance(user_id: int, db: Session = Depends(get_db)):
+def get_balance(
+    user_id: int,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    require_owner(principal, user_id)
     balance = db.query(Balance).filter(Balance.user_id == user_id).first()
     if balance is None:
         raise HTTPException(status_code=404, detail="Balance not found")
@@ -99,7 +133,12 @@ def get_balance(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/transactions/{user_id}", status_code=200)
-def get_transactions(user_id: int, db: Session = Depends(get_db)):
+def get_transactions(
+    user_id: int,
+    principal: Principal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    require_owner(principal, user_id)
     transactions = (
         db.query(Transaction)
         .filter(Transaction.user_id == user_id)
@@ -124,8 +163,10 @@ def charge_for_ad(
     user_id: int,
     ad_id: int,
     amount: condecimal(gt=Decimal("0"), max_digits=12, decimal_places=2),
+    x_service_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    require_service_token(x_service_token)
     balance = (
         db.query(Balance)
         .filter(Balance.user_id == user_id)
@@ -151,6 +192,7 @@ def charge_for_ad(
     ad = db.query(Ad).filter(Ad.id == ad_id).first()
     if ad:
         ad.transaction_id = transaction.id
+    db.commit()
 
     return {
         "user_id": user_id,
@@ -165,8 +207,10 @@ def charge_for_creative(
     user_id: int,
     creative_id: int,
     amount: condecimal(gt=Decimal("0"), max_digits=12, decimal_places=2),
+    x_service_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    require_service_token(x_service_token)
     balance = (
         db.query(Balance)
         .filter(Balance.user_id == user_id)
@@ -192,6 +236,7 @@ def charge_for_creative(
     creative = db.query(Creative).filter(Creative.id == creative_id).first()
     if creative:
         creative.transaction_id = transaction.id
+    db.commit()
 
     return {
         "user_id": user_id,

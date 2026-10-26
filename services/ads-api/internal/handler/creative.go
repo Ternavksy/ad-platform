@@ -18,9 +18,19 @@ func NewCreativeHandler(s *service.CreativeService) *CreativeHandler {
 }
 
 func (h *CreativeHandler) Create(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	var req model.Creative
 	if err := c.ShouldBindJSON(&req); err != nil {
 		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	owned, ownershipErr := h.service.AdOwnedByUser(c.Request.Context(), req.AdID, principal.UserID)
+	if ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	if err := h.service.Create(c.Request.Context(), &req); err != nil {
@@ -35,6 +45,12 @@ func (h *CreativeHandler) Upload(c *gin.Context) {
 	adID, err := strconv.ParseInt(c.PostForm("ad_id"), 10, 64)
 	if err != nil || adID <= 0 {
 		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.AdOwnedByUser(c.Request.Context(), adID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	file, err := c.FormFile("file")
@@ -56,6 +72,12 @@ func (h *CreativeHandler) List(c *gin.Context) {
 		HandleError(c, service.ErrInvalidInput)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.AdOwnedByUser(c.Request.Context(), adID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	items, err := h.service.ListByAd(c.Request.Context(), adID)
 	if err != nil {
 		HandleError(c, err)
@@ -66,6 +88,12 @@ func (h *CreativeHandler) List(c *gin.Context) {
 
 func (h *CreativeHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	creative, err := h.service.GetByID(c.Request.Context(), id)
 	if err != nil {
 		HandleError(c, err)
@@ -76,6 +104,12 @@ func (h *CreativeHandler) Get(c *gin.Context) {
 
 func (h *CreativeHandler) Update(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	var req model.Creative
 	if err := c.ShouldBindJSON(&req); err != nil {
 		HandleError(c, service.ErrInvalidInput)
@@ -96,6 +130,12 @@ func (h *CreativeHandler) UpdateUpload(c *gin.Context) {
 		HandleError(c, service.ErrNotFound)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	file, err := c.FormFile("file")
 	if err != nil {
 		HandleError(c, service.ErrInvalidInput)
@@ -111,6 +151,12 @@ func (h *CreativeHandler) UpdateUpload(c *gin.Context) {
 
 func (h *CreativeHandler) Delete(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		HandleError(c, err)
 		return
@@ -129,7 +175,7 @@ func (h *CreativeHandler) SubmitForModeration(c *gin.Context) {
 		c.Request.Context(),
 		id,
 		principal.UserID,
-		principal.Role == "admin",
+		principal.HasPermission("moderation.review"),
 	)
 	if err != nil {
 		HandleError(c, err)

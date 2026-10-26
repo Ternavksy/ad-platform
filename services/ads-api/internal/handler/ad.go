@@ -18,9 +18,19 @@ func NewAdHandler(s *service.AdService) *AdHandler {
 }
 
 func (h *AdHandler) Create(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	var req model.Ad
 	if err := c.ShouldBindJSON(&req); err != nil {
 		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	owned, err := h.service.CampaignOwnedByUser(c.Request.Context(), req.CampaignID, principal.UserID)
+	if err != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	if err := h.service.Create(c.Request.Context(), &req); err != nil {
@@ -36,6 +46,12 @@ func (h *AdHandler) List(c *gin.Context) {
 		HandleError(c, service.ErrInvalidInput)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.CampaignOwnedByUser(c.Request.Context(), campaignID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	items, err := h.service.ListByCampaign(c.Request.Context(), campaignID)
 	if err != nil {
 		HandleError(c, err)
@@ -46,6 +62,12 @@ func (h *AdHandler) List(c *gin.Context) {
 
 func (h *AdHandler) Get(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 
 	ad, err := h.service.GetByID(c.Request.Context(), id)
 	if err != nil {
@@ -57,6 +79,12 @@ func (h *AdHandler) Get(c *gin.Context) {
 
 func (h *AdHandler) Update(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	var req model.Ad
 	if err := c.ShouldBindJSON(&req); err != nil {
 		HandleError(c, service.ErrInvalidInput)
@@ -72,6 +100,12 @@ func (h *AdHandler) Update(c *gin.Context) {
 
 func (h *AdHandler) Delete(c *gin.Context) {
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.OwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		HandleError(c, err)
 		return

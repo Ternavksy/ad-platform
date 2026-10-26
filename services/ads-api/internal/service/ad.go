@@ -160,3 +160,17 @@ func (s *AdService) validatePlacement(ctx context.Context, ad *model.Ad) error {
 	}
 	return nil
 }
+
+func (s *AdService) CampaignOwnedByUser(ctx context.Context, campaignID, userID int64) (bool, error) {
+	if campaignID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.CampaignOwnedByUser(ctx, campaignID, userID)
+}
+
+func (s *AdService) OwnedByUser(ctx context.Context, adID, userID int64) (bool, error) {
+	if adID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.OwnedByUser(ctx, adID, userID)
+}

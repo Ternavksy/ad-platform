@@ -12,7 +12,7 @@ import (
 func testAccessToken(secret, subject, role string, expires int64) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		fmt.Sprintf(`{"sub":%q,"role":%q,"exp":%d}`, subject, role, expires),
+		fmt.Sprintf(`{"sub":%q,"role":%q,"roles":[%q],"permissions":["moderation.review"],"token_version":1,"sid":"session-1","jti":"token-1","iat":%d,"typ":"access","iss":"ad-platform-auth","aud":"ad-platform","exp":%d}`, subject, role, role, expires-3600, expires),
 	))
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(header + "." + payload))
@@ -34,8 +34,9 @@ func TestParseAccessToken(t *testing.T) {
 	if _, ok := parseAccessToken(expired, "shared-secret", now); ok {
 		t.Fatal("expired token must be rejected")
 	}
-	unsupportedRole := testAccessToken("shared-secret", "42", "moderator", now.Add(time.Hour).Unix())
-	if _, ok := parseAccessToken(unsupportedRole, "shared-secret", now); ok {
-		t.Fatal("unsupported role must be rejected")
+	moderator := testAccessToken("shared-secret", "42", "moderator", now.Add(time.Hour).Unix())
+	moderatorPrincipal, ok := parseAccessToken(moderator, "shared-secret", now)
+	if !ok || !moderatorPrincipal.HasPermission("moderation.review") {
+		t.Fatal("permission-bearing moderator token must be accepted")
 	}
 }

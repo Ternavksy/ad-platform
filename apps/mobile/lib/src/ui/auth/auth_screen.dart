@@ -11,6 +11,125 @@ class AuthScreen extends ConsumerStatefulWidget {
   ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
+class MfaScreen extends ConsumerStatefulWidget {
+  const MfaScreen({super.key});
+
+  @override
+  ConsumerState<MfaScreen> createState() => _MfaScreenState();
+}
+
+class _MfaScreenState extends ConsumerState<MfaScreen> {
+  final _code = TextEditingController();
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirm() async {
+    if (_code.text.trim().length < 6) return;
+    await ref.read(sessionProvider.notifier).confirmMfa(_code.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(sessionProvider);
+    final challenge = session.mfaChallenge;
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: ref.read(sessionProvider.notifier).cancelMfa,
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: const Text('Защищённый вход'),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(Icons.admin_panel_settings_rounded, size: 52),
+                      const SizedBox(height: 18),
+                      Text(
+                        challenge?.setupRequired == true
+                            ? 'Настройте двухфакторную защиту'
+                            : 'Подтвердите вход',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        challenge?.setupRequired == true
+                            ? 'Добавьте ключ в приложение-аутентификатор и введите полученный код.'
+                            : 'Введите код из приложения-аутентификатора или одноразовый recovery-код.',
+                        textAlign: TextAlign.center,
+                      ),
+                      if (challenge?.secret != null) ...[
+                        const SizedBox(height: 18),
+                        SelectableText(
+                          challenge!.secret!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      TextField(
+                        controller: _code,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _confirm(),
+                        decoration: const InputDecoration(
+                          labelText: 'Код подтверждения',
+                          prefixIcon: Icon(Icons.password_rounded),
+                        ),
+                      ),
+                      if (session.error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          session.error!,
+                          style: const TextStyle(color: AppColors.coral),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: session.submitting ? null : _confirm,
+                        icon:
+                            session.submitting
+                                ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Icon(Icons.verified_user_rounded),
+                        label: const Text('Подтвердить'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();

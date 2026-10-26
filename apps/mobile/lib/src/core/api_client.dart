@@ -44,10 +44,60 @@ class ApiClient implements ApiTransport {
           sendTimeout: const Duration(seconds: 15),
           headers: const {'Content-Type': 'application/json'},
         ),
-      );
+      ) {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onError: (error, handler) async {
+          final request = error.requestOptions;
+          final canRefresh =
+              error.response?.statusCode == 401 &&
+              _unauthorizedHandler != null &&
+              request.extra['accessTokenRetried'] != true &&
+              !_isAuthenticationPath(request.path);
+          if (!canRefresh || !await _refreshAccessToken()) {
+            handler.next(error);
+            return;
+          }
+          try {
+            request.extra['accessTokenRetried'] = true;
+            request.headers['Authorization'] = 'Bearer $_token';
+            handler.resolve(await _dio.fetch<dynamic>(request));
+          } on DioException catch (retryError) {
+            handler.next(retryError);
+          }
+        },
+      ),
+    );
+  }
 
   final Dio _dio;
   String? _token;
+  Future<bool> Function()? _unauthorizedHandler;
+  Future<bool>? _refreshing;
+
+  void setUnauthorizedHandler(Future<bool> Function() value) {
+    _unauthorizedHandler = value;
+  }
+
+  bool _isAuthenticationPath(String path) =>
+      path == '/auth/login' ||
+      path == '/auth/register' ||
+      path == '/auth/refresh' ||
+      path == '/auth/mfa/confirm' ||
+      path == '/auth/invitations/accept' ||
+      path == '/auth/password-reset/complete';
+
+  Future<bool> _refreshAccessToken() async {
+    final existing = _refreshing;
+    if (existing != null) return existing;
+    final future = _unauthorizedHandler!();
+    _refreshing = future;
+    try {
+      return await future;
+    } finally {
+      _refreshing = null;
+    }
+  }
 
   @override
   void setToken(String? value) => _token = value;

@@ -88,6 +88,75 @@ class RabbitMQService:
         except Exception as e:
             logger.error(f"Failed to publish ad_updated event: {e}")
 
+    def publish_user_blocked(
+        self,
+        user_id: int,
+        actor_user_id: int,
+        reason: str,
+        token_version: int,
+    ):
+        """Best-effort security event; the database update remains authoritative."""
+        if not self.connect():
+            logger.warning("Unable to publish user.blocked for user %s", user_id)
+            return
+        try:
+            self.channel.basic_publish(
+                exchange="ad_events",
+                routing_key="user.blocked",
+                body=json.dumps(
+                    {
+                        "type": "user.blocked",
+                        "user_id": user_id,
+                        "actor_user_id": actor_user_id,
+                        "reason": reason,
+                        "status": "blocked",
+                        "token_version": token_version,
+                    }
+                ),
+                properties=pika.BasicProperties(
+                    content_type="application/json",
+                    delivery_mode=2,
+                ),
+            )
+        except Exception as exc:
+            logger.error("Failed to publish user.blocked: %s", exc)
+        finally:
+            self.close()
+
+    def publish_password_reset_requested(
+        self,
+        user_id: int,
+        email: str,
+        token: str,
+        expires_at: str,
+    ) -> None:
+        """Publish the one-time secret to an internal delivery consumer, never to logs/API."""
+        if not self.connect():
+            logger.warning("Unable to publish password reset request for user %s", user_id)
+            return
+        try:
+            self.channel.basic_publish(
+                exchange="ad_events",
+                routing_key="user.password_reset.requested",
+                body=json.dumps(
+                    {
+                        "type": "user.password_reset.requested",
+                        "user_id": user_id,
+                        "email": email,
+                        "token": token,
+                        "expires_at": expires_at,
+                    }
+                ),
+                properties=pika.BasicProperties(
+                    content_type="application/json",
+                    delivery_mode=2,
+                ),
+            )
+        except Exception as exc:
+            logger.error("Failed to publish password reset request for user %s: %s", user_id, exc)
+        finally:
+            self.close()
+
     def close(self):
         """Close RabbitMQ connection"""
         if self.channel:

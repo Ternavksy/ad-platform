@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:ad_platform_mobile/src/data/ad_platform_repository.dart';
 import 'package:ad_platform_mobile/src/domain/models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final repositoryProvider = Provider<AdPlatformRepository>(
-  (ref) => AdPlatformRepository(),
-);
+final repositoryProvider = Provider<AdPlatformRepository>((ref) {
+  final repository = AdPlatformRepository();
+  ref.onDispose(repository.dispose);
+  return repository;
+});
 
-enum SessionStatus { loading, authenticated, unauthenticated }
+enum SessionStatus { loading, authenticated, unauthenticated, mfaRequired }
+
+enum AppWorkspace { advertiser, admin }
 
 class SessionState {
   const SessionState({
@@ -14,42 +20,69 @@ class SessionState {
     this.user,
     this.error,
     this.submitting = false,
+    this.mfaChallenge,
+    this.recoveryCodes = const [],
+    this.workspace = AppWorkspace.advertiser,
   });
 
   final SessionStatus status;
   final AppUser? user;
   final String? error;
   final bool submitting;
+  final MfaChallenge? mfaChallenge;
+  final List<String> recoveryCodes;
+  final AppWorkspace workspace;
 
   SessionState copyWith({
     SessionStatus? status,
     AppUser? user,
     String? error,
     bool? submitting,
+    MfaChallenge? mfaChallenge,
+    List<String>? recoveryCodes,
+    AppWorkspace? workspace,
     bool clearError = false,
   }) => SessionState(
     status: status ?? this.status,
     user: user ?? this.user,
     error: clearError ? null : error ?? this.error,
     submitting: submitting ?? this.submitting,
+    mfaChallenge: mfaChallenge ?? this.mfaChallenge,
+    recoveryCodes: recoveryCodes ?? this.recoveryCodes,
+    workspace: workspace ?? this.workspace,
   );
 }
 
 class SessionController extends StateNotifier<SessionState> {
   SessionController(this._repository) : super(const SessionState()) {
+    _invalidatedSubscription = _repository.sessionInvalidated.listen((_) {
+      state = const SessionState(status: SessionStatus.unauthenticated);
+    });
     _restore();
   }
 
   final AdPlatformRepository _repository;
+  late final StreamSubscription<void> _invalidatedSubscription;
+
+  @override
+  void dispose() {
+    _invalidatedSubscription.cancel();
+    super.dispose();
+  }
 
   Future<void> _restore() async {
     final user = await _repository.restoreSession();
+    final workspace =
+        user?.canAdminister == true
+            ? AppWorkspace.admin
+            : AppWorkspace.advertiser;
     state = SessionState(
       status:
           user == null
               ? SessionStatus.unauthenticated
               : SessionStatus.authenticated,
       user: user,
+      workspace: workspace,
     );
   }
 
@@ -57,12 +90,57 @@ class SessionController extends StateNotifier<SessionState> {
     state = state.copyWith(submitting: true, clearError: true);
     try {
       final user = await _repository.login(email, password);
-      state = SessionState(status: SessionStatus.authenticated, user: user);
+      state = SessionState(
+        status: SessionStatus.authenticated,
+        user: user,
+        workspace:
+            user.canAdminister ? AppWorkspace.admin : AppWorkspace.advertiser,
+      );
+      return true;
+    } on MfaRequiredException catch (error) {
+      state = SessionState(
+        status: SessionStatus.mfaRequired,
+        mfaChallenge: error.challenge,
+      );
+      return false;
+    } catch (error) {
+      state = state.copyWith(submitting: false, error: error.toString());
+      return false;
+    }
+  }
+
+  Future<bool> confirmMfa(String code) async {
+    final challenge = state.mfaChallenge;
+    if (challenge == null) return false;
+    state = state.copyWith(submitting: true, clearError: true);
+    try {
+      final result = await _repository.confirmMfa(challenge, code);
+      state = SessionState(
+        status: SessionStatus.authenticated,
+        user: result.user,
+        recoveryCodes: result.recoveryCodes,
+        workspace: AppWorkspace.admin,
+      );
       return true;
     } catch (error) {
       state = state.copyWith(submitting: false, error: error.toString());
       return false;
     }
+  }
+
+  void cancelMfa() {
+    state = const SessionState(status: SessionStatus.unauthenticated);
+  }
+
+  void switchWorkspace(AppWorkspace workspace) {
+    final user = state.user;
+    if (workspace == AppWorkspace.admin && user?.canAdminister != true) return;
+    state = SessionState(
+      status: SessionStatus.authenticated,
+      user: user,
+      recoveryCodes: state.recoveryCodes,
+      workspace: workspace,
+    );
   }
 
   Future<bool> register(String email, String password) async {
@@ -79,6 +157,11 @@ class SessionController extends StateNotifier<SessionState> {
 
   Future<void> logout() async {
     await _repository.logout();
+    state = const SessionState(status: SessionStatus.unauthenticated);
+  }
+
+  Future<void> logoutAll() async {
+    await _repository.logoutAll();
     state = const SessionState(status: SessionStatus.unauthenticated);
   }
 }
@@ -191,7 +274,13 @@ class AppDataController extends StateNotifier<AppDataState> {
       );
       List<AnalyticsPoint> analytics;
       try {
-        analytics = await _repository.getCampaignAnalytics();
+        final analyticsByCampaign = await Future.wait(
+          campaigns.map(
+            (campaign) =>
+                _repository.getCampaignAnalytics(campaignId: campaign.id),
+          ),
+        );
+        analytics = analyticsByCampaign.expand((items) => items).toList();
       } catch (_) {
         analytics = const [];
       }
@@ -486,3 +575,199 @@ final moderationProvider =
     StateNotifierProvider<ModerationController, ModerationState>(
       (ref) => ModerationController(ref.watch(repositoryProvider)),
     );
+
+class AdminState {
+  const AdminState({
+    this.loading = false,
+    this.dashboard,
+    this.users = const [],
+    this.selectedUser,
+    this.audit = const [],
+    this.query = '',
+    this.statusFilter = '',
+    this.nextCursor,
+    this.error,
+  });
+
+  final bool loading;
+  final AdminDashboard? dashboard;
+  final List<AdminUser> users;
+  final AdminUser? selectedUser;
+  final List<AdminAuditEvent> audit;
+  final String query;
+  final String statusFilter;
+  final int? nextCursor;
+  final String? error;
+
+  AdminState copyWith({
+    bool? loading,
+    AdminDashboard? dashboard,
+    List<AdminUser>? users,
+    AdminUser? selectedUser,
+    List<AdminAuditEvent>? audit,
+    String? query,
+    String? statusFilter,
+    int? nextCursor,
+    String? error,
+    bool clearError = false,
+  }) => AdminState(
+    loading: loading ?? this.loading,
+    dashboard: dashboard ?? this.dashboard,
+    users: users ?? this.users,
+    selectedUser: selectedUser ?? this.selectedUser,
+    audit: audit ?? this.audit,
+    query: query ?? this.query,
+    statusFilter: statusFilter ?? this.statusFilter,
+    nextCursor: nextCursor ?? this.nextCursor,
+    error: clearError ? null : error ?? this.error,
+  );
+}
+
+class AdminController extends StateNotifier<AdminState> {
+  AdminController(this._repository) : super(const AdminState());
+
+  final AdPlatformRepository _repository;
+
+  Future<void> load({String? query, String? status}) async {
+    final selectedQuery = query ?? state.query;
+    final selectedStatus = status ?? state.statusFilter;
+    state = state.copyWith(
+      loading: true,
+      query: selectedQuery,
+      statusFilter: selectedStatus,
+      clearError: true,
+    );
+    try {
+      final results = await Future.wait([
+        _repository.getAdminDashboard(),
+        _repository.getAdminUsers(query: selectedQuery, status: selectedStatus),
+        _repository.getAdminAudit(),
+      ]);
+      final page = results[1] as ({List<AdminUser> items, int? nextCursor});
+      state = state.copyWith(
+        loading: false,
+        dashboard: results[0] as AdminDashboard,
+        users: page.items,
+        nextCursor: page.nextCursor,
+        audit: results[2] as List<AdminAuditEvent>,
+      );
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+    }
+  }
+
+  Future<void> loadMore() async {
+    final cursor = state.nextCursor;
+    if (cursor == null || state.loading) return;
+    state = state.copyWith(loading: true, clearError: true);
+    try {
+      final page = await _repository.getAdminUsers(
+        query: state.query,
+        status: state.statusFilter,
+        cursor: cursor,
+      );
+      state = state.copyWith(
+        loading: false,
+        users: [...state.users, ...page.items],
+        nextCursor: page.nextCursor,
+      );
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+    }
+  }
+
+  Future<void> selectUser(int userId) async {
+    try {
+      final user = await _repository.getAdminUser(userId);
+      state = state.copyWith(selectedUser: user, clearError: true);
+    } catch (error) {
+      state = state.copyWith(error: error.toString());
+    }
+  }
+
+  Future<void> setStatus(
+    AdminUser user,
+    String action, {
+    required String reason,
+    required String mfaCode,
+    DateTime? suspendedUntil,
+  }) async {
+    await _runUserCommand(
+      () => _repository.setAdminUserStatus(
+        user,
+        action,
+        reason: reason,
+        mfaCode: mfaCode,
+        suspendedUntil: suspendedUntil,
+      ),
+    );
+  }
+
+  Future<void> updateRoles(
+    AdminUser user,
+    List<String> roles, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    await _runUserCommand(
+      () => _repository.updateAdminUserRoles(
+        user,
+        roles,
+        reason: reason,
+        mfaCode: mfaCode,
+      ),
+    );
+  }
+
+  Future<void> revokeSessions(
+    AdminUser user, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    await _runUserCommand(
+      () => _repository.revokeAdminUserSessions(
+        user,
+        reason: reason,
+        mfaCode: mfaCode,
+      ),
+    );
+  }
+
+  Future<void> requestPasswordReset(
+    AdminUser user, {
+    required String reason,
+    required String mfaCode,
+  }) async {
+    await _runUserCommand(
+      () => _repository.requestAdminPasswordReset(
+        user,
+        reason: reason,
+        mfaCode: mfaCode,
+      ),
+    );
+  }
+
+  Future<void> _runUserCommand(Future<AdminUser> Function() command) async {
+    state = state.copyWith(loading: true, clearError: true);
+    try {
+      final updated = await command();
+      state = state.copyWith(
+        loading: false,
+        selectedUser: updated,
+        users:
+            state.users
+                .map((item) => item.id == updated.id ? updated : item)
+                .toList(),
+      );
+      await load();
+      await selectUser(updated.id);
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+      rethrow;
+    }
+  }
+}
+
+final adminProvider = StateNotifierProvider<AdminController, AdminState>(
+  (ref) => AdminController(ref.watch(repositoryProvider)),
+);

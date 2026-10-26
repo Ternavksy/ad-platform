@@ -27,11 +27,17 @@ func pathID(c *gin.Context) (int64, bool) {
 }
 
 func (h *InventoryHandler) CreateSite(c *gin.Context) {
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	var item model.Site
 	if c.ShouldBindJSON(&item) != nil {
 		HandleError(c, service.ErrInvalidInput)
 		return
 	}
+	item.UserID = principal.UserID
 	if err := h.service.CreateSite(c.Request.Context(), &item); err != nil {
 		HandleError(c, err)
 		return
@@ -49,16 +55,21 @@ func (h *InventoryHandler) GetSite(c *gin.Context) {
 		HandleError(c, err)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	if !ok || item.UserID != principal.UserID {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	c.JSON(http.StatusOK, item)
 }
 
 func (h *InventoryHandler) ListSites(c *gin.Context) {
-	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
-	if err != nil {
-		HandleError(c, service.ErrInvalidInput)
+	principal, ok := CurrentPrincipal(c)
+	if !ok {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
-	items, err := h.service.ListSites(c.Request.Context(), userID)
+	items, err := h.service.ListSites(c.Request.Context(), principal.UserID)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -69,6 +80,12 @@ func (h *InventoryHandler) ListSites(c *gin.Context) {
 func (h *InventoryHandler) UpdateSite(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
+		return
+	}
+	principal, authenticated := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.SiteOwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !authenticated || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	var item model.Site
@@ -87,6 +104,12 @@ func (h *InventoryHandler) UpdateSite(c *gin.Context) {
 func (h *InventoryHandler) DeleteSite(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
+		return
+	}
+	principal, authenticated := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.SiteOwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !authenticated || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	if err := h.service.DeleteSite(c.Request.Context(), id); err != nil {
@@ -167,6 +190,12 @@ func (h *InventoryHandler) CreatePlacement(c *gin.Context) {
 		HandleError(c, service.ErrInvalidInput)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.SiteOwnedByUser(c.Request.Context(), item.SiteID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	if err := h.service.CreatePlacement(c.Request.Context(), &item); err != nil {
 		HandleError(c, err)
 		return
@@ -184,6 +213,12 @@ func (h *InventoryHandler) GetPlacement(c *gin.Context) {
 		HandleError(c, err)
 		return
 	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.SiteOwnedByUser(c.Request.Context(), item.SiteID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
+		return
+	}
 	c.JSON(http.StatusOK, item)
 }
 
@@ -191,6 +226,12 @@ func (h *InventoryHandler) ListPlacements(c *gin.Context) {
 	siteID, err := strconv.ParseInt(c.Query("site_id"), 10, 64)
 	if err != nil {
 		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	principal, ok := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.SiteOwnedByUser(c.Request.Context(), siteID, principal.UserID)
+	if !ok || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	items, err := h.service.ListPlacements(c.Request.Context(), siteID)
@@ -204,6 +245,12 @@ func (h *InventoryHandler) ListPlacements(c *gin.Context) {
 func (h *InventoryHandler) UpdatePlacement(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
+		return
+	}
+	principal, authenticated := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.PlacementOwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !authenticated || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	var item model.Placement
@@ -222,6 +269,12 @@ func (h *InventoryHandler) UpdatePlacement(c *gin.Context) {
 func (h *InventoryHandler) DeletePlacement(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
+		return
+	}
+	principal, authenticated := CurrentPrincipal(c)
+	owned, ownershipErr := h.service.PlacementOwnedByUser(c.Request.Context(), id, principal.UserID)
+	if !authenticated || ownershipErr != nil || !owned {
+		HandleError(c, service.ErrForbidden)
 		return
 	}
 	if err := h.service.DeletePlacement(c.Request.Context(), id); err != nil {

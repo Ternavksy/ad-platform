@@ -147,6 +147,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                         (value) => setState(() => _index = value),
                     destinations: bottomDestinations,
                   ),
+          floatingActionButton:
+              isAdmin
+                  ? FloatingActionButton.small(
+                    tooltip: 'Администрирование',
+                    onPressed:
+                        () => ref
+                            .read(sessionProvider.notifier)
+                            .switchWorkspace(AppWorkspace.admin),
+                    child: const Icon(Icons.admin_panel_settings_rounded),
+                  )
+                  : null,
         );
       },
     );

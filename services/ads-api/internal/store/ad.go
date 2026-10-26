@@ -139,6 +139,24 @@ func (s *AdStore) PlacementBelongsToCampaignOwner(ctx context.Context, placement
 	return count == 1, err
 }
 
+func (s *AdStore) CampaignOwnedByUser(ctx context.Context, campaignID, userID int64) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `
+		SELECT COUNT(*) FROM campaigns WHERE id = ? AND user_id = ?
+	`, campaignID, userID)
+	return count == 1, err
+}
+
+func (s *AdStore) OwnedByUser(ctx context.Context, adID, userID int64) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `
+		SELECT COUNT(*)
+		FROM ads a JOIN campaigns c ON c.id = a.campaign_id
+		WHERE a.id = ? AND c.user_id = ?
+	`, adID, userID)
+	return count == 1, err
+}
+
 func (s *AdStore) Delete(ctx context.Context, id int64) error {
 	query := `DELETE FROM ads WHERE id = ?`
 	_, err := s.db.ExecContext(ctx, query, id)

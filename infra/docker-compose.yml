@@ -158,6 +158,7 @@ services:
       - "8080:8080"
     environment:
       MEDIA_STORAGE_PATH: /data/media
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ads_media:/data/media
     healthcheck:
@@ -181,6 +182,8 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    environment:
+      REDIS_URL: redis://redis:6379/0
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -193,6 +196,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      AUTH_API_URL: http://auth-api:8000
+      ADS_API_URL: http://ads-api:8080
     depends_on:
       clickhouse-init:
         condition: service_completed_successfully

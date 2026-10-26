@@ -1,6 +1,7 @@
 import 'package:ad_platform_mobile/src/core/app_theme.dart';
 import 'package:ad_platform_mobile/src/state/providers.dart';
 import 'package:ad_platform_mobile/src/ui/auth/auth_screen.dart';
+import 'package:ad_platform_mobile/src/ui/admin/admin_shell.dart';
 import 'package:ad_platform_mobile/src/ui/home/home_shell.dart';
 import 'package:ad_platform_mobile/src/ui/widgets/common.dart';
 import 'package:flutter/material.dart';
@@ -18,8 +19,12 @@ class AdPlatformApp extends ConsumerWidget {
       theme: AppTheme.light,
       home: switch (session.status) {
         SessionStatus.loading => const _SplashScreen(),
-        SessionStatus.authenticated => const HomeShell(),
+        SessionStatus.authenticated =>
+          session.workspace == AppWorkspace.admin
+              ? const AdminShell()
+              : const HomeShell(),
         SessionStatus.unauthenticated => const AuthScreen(),
+        SessionStatus.mfaRequired => const MfaScreen(),
       },
     );
   }

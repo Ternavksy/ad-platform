@@ -147,6 +147,10 @@ func setupDB(t *testing.T) *sqlx.DB {
         ,city TEXT NOT NULL DEFAULT ''
         ,device_type TEXT NOT NULL DEFAULT ''
         ,operating_system TEXT NOT NULL DEFAULT ''
+        ,source_ip_hash TEXT NOT NULL DEFAULT ''
+        ,user_agent_hash TEXT NOT NULL DEFAULT ''
+        ,click_is_fraud INTEGER NOT NULL DEFAULT 0
+        ,click_fraud_reason TEXT NOT NULL DEFAULT ''
         ,bid_cpm REAL NOT NULL DEFAULT 0
         ,cost REAL NOT NULL DEFAULT 0
     );`)
@@ -183,6 +187,10 @@ func setupDB(t *testing.T) *sqlx.DB {
         ,conversion_type TEXT NOT NULL DEFAULT ''
         ,conversion_value REAL NOT NULL DEFAULT 0
         ,conversion_currency TEXT NOT NULL DEFAULT ''
+        ,attribution_model TEXT NOT NULL DEFAULT ''
+        ,attribution_window_hours INTEGER NOT NULL DEFAULT 0
+        ,is_fraud INTEGER NOT NULL DEFAULT 0
+        ,fraud_reason TEXT NOT NULL DEFAULT ''
     );`)
 	if err != nil {
 		t.Fatalf("create delivery_outbox: %v", err)
@@ -195,6 +203,10 @@ func setupDB(t *testing.T) *sqlx.DB {
         value REAL NOT NULL DEFAULT 0,
         currency TEXT NOT NULL DEFAULT '',
         occurred_at DATETIME NOT NULL,
+        attribution_model TEXT NOT NULL DEFAULT 'view_through',
+        attribution_window_hours INTEGER NOT NULL DEFAULT 24,
+        is_fraud INTEGER NOT NULL DEFAULT 0,
+        fraud_reason TEXT NOT NULL DEFAULT '',
         PRIMARY KEY(delivery_id, event_id)
     );`)
 	if err != nil {
@@ -373,6 +385,9 @@ func TestDeliveryServiceSelectAndClickAreIdempotent(t *testing.T) {
 	if err != nil || !conversion.Recorded || conversion.EventType != "ad_conversion" {
 		t.Fatalf("track conversion: result=%#v err=%v", conversion, err)
 	}
+	if conversion.AttributionModel != "last_click" || conversion.AttributionWindow != 168 || conversion.IsFraud {
+		t.Fatalf("unexpected direct attribution: %#v", conversion)
+	}
 	repeatedConversion, err := svc.TrackConversion(context.Background(), first.ID, conversionRequest)
 	if err != nil || repeatedConversion.Recorded || repeatedConversion.EventID != conversion.EventID {
 		t.Fatalf("repeat conversion: result=%#v err=%v", repeatedConversion, err)
@@ -381,6 +396,16 @@ func TestDeliveryServiceSelectAndClickAreIdempotent(t *testing.T) {
 	conflicting.Value = 1
 	if _, err := svc.TrackConversion(context.Background(), first.ID, conflicting); !errors.Is(err, service.ErrConflict) {
 		t.Fatalf("conflicting conversion must fail: %v", err)
+	}
+	attributed, err := svc.TrackAttributedConversion(context.Background(), model.AttributionConversionRequest{
+		ConversionRequest: model.ConversionRequest{
+			EventID:        "order-43",
+			ConversionType: "signup",
+		},
+		VisitorID: "visitor-1",
+	})
+	if err != nil || attributed.AttributionModel != "last_click" || attributed.DeliveryID != first.ID {
+		t.Fatalf("last-click attribution: result=%#v err=%v", attributed, err)
 	}
 
 	var impressions, clicks, conversions int
@@ -393,7 +418,7 @@ func TestDeliveryServiceSelectAndClickAreIdempotent(t *testing.T) {
 	if err := db.Get(&conversions, `SELECT count(*) FROM delivery_outbox WHERE event_type = 'ad_conversion'`); err != nil {
 		t.Fatalf("count conversions: %v", err)
 	}
-	if impressions != 1 || clicks != 1 || conversions != 1 {
+	if impressions != 1 || clicks != 1 || conversions != 2 {
 		t.Fatalf("idempotency failed: impressions=%d clicks=%d conversions=%d", impressions, clicks, conversions)
 	}
 }

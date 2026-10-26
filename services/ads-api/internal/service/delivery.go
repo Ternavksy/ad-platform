@@ -4,7 +4,9 @@ import (
 	"ads-api/internal/model"
 	"ads-api/internal/store"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -21,6 +23,11 @@ var trackingEventIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,1
 var conversionTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 
+const (
+	lastClickWindow   = 7 * 24 * time.Hour
+	viewThroughWindow = 24 * time.Hour
+)
+
 type DeliveryService struct {
 	store *store.DeliveryStore
 }
@@ -30,6 +37,9 @@ func NewDeliveryService(s *store.DeliveryStore) *DeliveryService {
 }
 
 func (s *DeliveryService) Select(ctx context.Context, req model.DeliveryRequest) (*model.Delivery, error) {
+	if suspiciousUserAgent(req.UserAgent) {
+		return nil, ErrNoDelivery
+	}
 	req.Placement = strings.TrimSpace(strings.ToLower(req.Placement))
 	req.PlacementCode = strings.TrimSpace(strings.ToLower(req.PlacementCode))
 	if req.Placement == "" {
@@ -153,6 +163,8 @@ func (s *DeliveryService) Select(ctx context.Context, req model.DeliveryRequest)
 		City:              req.Geography.City,
 		DeviceType:        req.Device.Type,
 		OperatingSystem:   req.Device.OperatingSystem,
+		SourceIPHash:      privacyHash(req.SourceIP),
+		UserAgentHash:     privacyHash(req.UserAgent),
 	}
 	if err := s.store.Create(ctx, item); err != nil {
 		// A concurrent retry with the same request ID may have won the insert.
@@ -206,6 +218,72 @@ func (s *DeliveryService) TrackConversion(
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrNotFound
 	}
+	if err := normalizeConversionRequest(&req); err != nil {
+		return nil, ErrInvalidInput
+	}
+	now := time.Now().UTC()
+	item, err := s.store.GetByID(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get delivery for conversion: %w", err)
+	}
+	attributionModel, attributionWindow := deliveryAttribution(item, now)
+	_, result, err := s.store.TrackConversion(
+		ctx, id, req, now, attributionModel, attributionWindow,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if errors.Is(err, store.ErrEventConflict) {
+		return nil, ErrConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("track conversion: %w", err)
+	}
+	return result, nil
+}
+
+func (s *DeliveryService) TrackAttributedConversion(
+	ctx context.Context,
+	req model.AttributionConversionRequest,
+) (*model.TrackingResult, error) {
+	req.VisitorID = strings.TrimSpace(req.VisitorID)
+	if req.VisitorID == "" || len(req.VisitorID) > 128 {
+		return nil, ErrInvalidInput
+	}
+	if err := normalizeConversionRequest(&req.ConversionRequest); err != nil {
+		return nil, ErrInvalidInput
+	}
+	now := time.Now().UTC()
+	item, attributionModel, attributionWindow, err := s.store.FindAttributedDelivery(
+		ctx, req.VisitorID, now, lastClickWindow, viewThroughWindow,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find attribution: %w", err)
+	}
+	_, result, err := s.store.TrackConversion(
+		ctx,
+		item.ID,
+		req.ConversionRequest,
+		now,
+		attributionModel,
+		attributionWindow,
+	)
+	if errors.Is(err, store.ErrEventConflict) {
+		return nil, ErrConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("track attributed conversion: %w", err)
+	}
+	return result, nil
+}
+
+func normalizeConversionRequest(req *model.ConversionRequest) error {
 	req.EventID = strings.TrimSpace(req.EventID)
 	if req.EventID == "" {
 		req.EventID = uuid.NewString()
@@ -218,22 +296,38 @@ func (s *DeliveryService) TrackConversion(
 	req.Value = roundMoney(req.Value)
 	if !trackingEventIDPattern.MatchString(req.EventID) ||
 		!conversionTypePattern.MatchString(req.ConversionType) ||
-		req.Value < 0 || req.Value > 1_000_000_000 ||
+		req.Value < 0 || req.Value > 99_999_999 ||
 		(req.Currency != "" && !currencyPattern.MatchString(req.Currency)) ||
 		(req.Value > 0 && req.Currency == "") {
-		return nil, ErrInvalidInput
+		return ErrInvalidInput
 	}
-	_, result, err := s.store.TrackConversion(ctx, id, req, time.Now().UTC())
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+	return nil
+}
+
+func deliveryAttribution(item *model.Delivery, now time.Time) (string, int) {
+	if item.ClickedAt != nil && !item.ClickIsFraud && now.Sub(*item.ClickedAt) <= lastClickWindow {
+		return "last_click", int(lastClickWindow / time.Hour)
 	}
-	if errors.Is(err, store.ErrEventConflict) {
-		return nil, ErrConflict
+	return "view_through", int(viewThroughWindow / time.Hour)
+}
+
+func suspiciousUserAgent(value string) bool {
+	value = strings.ToLower(value)
+	for _, marker := range []string{"bot", "spider", "crawler", "headless", "phantomjs"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
 	}
-	if err != nil {
-		return nil, fmt.Errorf("track conversion: %w", err)
+	return false
+}
+
+func privacyHash(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
 	}
-	return result, nil
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
 
 func groupCandidates(items []model.DeliveryCandidate) [][]model.DeliveryCandidate {

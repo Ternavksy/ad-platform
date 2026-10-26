@@ -21,6 +21,23 @@ class _FakeApiTransport implements ApiTransport {
     method = 'GET';
     this.path = path;
     this.query = query;
+    if (path == '/admin/dashboard') {
+      return {
+        'total_users': 2,
+        'active_users': 1,
+        'blocked_users': 1,
+        'new_users': 1,
+        'recent_audit': <dynamic>[],
+      };
+    }
+    if (path == '/admin/users') {
+      return {
+        'items': [_adminUserJson()],
+        'next_cursor': null,
+      };
+    }
+    if (path == '/admin/audit') return {'items': <dynamic>[]};
+    if (path.startsWith('/admin/users/')) return _adminUserJson();
     return <dynamic>[];
   }
 
@@ -78,6 +95,9 @@ class _FakeApiTransport implements ApiTransport {
         'conversion_type': conversion['conversion_type'],
         'conversion_value': conversion['value'],
         'conversion_currency': conversion['currency'],
+        'attribution_model': 'last_click',
+        'attribution_window_hours': 168,
+        'is_fraud': false,
       };
     }
     if (path.endsWith('/submit')) {
@@ -100,6 +120,11 @@ class _FakeApiTransport implements ApiTransport {
         'moderation_reason': review['reason'],
       };
     }
+    if (path.startsWith('/admin/users/')) {
+      return _adminUserJson(
+        status: path.endsWith('/block') ? 'blocked' : 'active',
+      );
+    }
     final payload = data! as Map<String, dynamic>;
     return {
       'id': 42,
@@ -114,8 +139,27 @@ class _FakeApiTransport implements ApiTransport {
     method = 'PUT';
     this.path = path;
     this.data = data;
+    if (path.startsWith('/admin/users/')) return _adminUserJson();
     return <String, dynamic>{};
   }
+
+  Map<String, dynamic> _adminUserJson({String status = 'active'}) => {
+    'id': 42,
+    'email': 'managed@example.com',
+    'role': 'user',
+    'roles': ['user'],
+    'permissions': <String>[],
+    'status': status,
+    'mfa_enabled': false,
+    'password_reset_required': false,
+    'workspaces': ['advertiser'],
+    'row_version': 2,
+    'created_at': '2026-10-26T10:00:00Z',
+    'balance': 0,
+    'active_sessions': 1,
+    'campaigns': 0,
+    'transactions': 0,
+  };
 
   @override
   Future<void> delete(String path) async {
@@ -308,51 +352,108 @@ void main() {
     expect(rejected.isRejected, isTrue);
   });
 
-  test('delivery tracking sends impression, click and conversion events', () async {
-    final ads = _FakeApiTransport();
+  test(
+    'delivery tracking sends impression, click and conversion events',
+    () async {
+      final ads = _FakeApiTransport();
+      final repository = AdPlatformRepository(
+        auth: _FakeApiTransport(),
+        ads: ads,
+        analytics: _FakeApiTransport(),
+      );
+
+      final delivery = await repository.selectAd(
+        requestId: 'request-1',
+        placementCode: 'placement-1',
+        visitorId: 'visitor-1',
+        age: 27,
+        country: 'RU',
+        deviceType: 'mobile',
+        operatingSystem: 'android',
+      );
+      expect(delivery?.impressionUrl, contains('/impression'));
+      expect((ads.data! as Map<String, dynamic>)['audience'], {
+        'age': 27,
+        'gender': '',
+        'interests': <String>[],
+      });
+
+      final impression = await repository.trackImpression('delivery-1');
+      expect(ads.path, '/delivery/delivery-1/impression');
+      expect(impression.eventType, 'ad_impression');
+
+      final click = await repository.trackClick('delivery-1');
+      expect(ads.path, '/delivery/delivery-1/click');
+      expect(click.eventType, 'ad_click');
+
+      final conversion = await repository.trackConversion(
+        'delivery-1',
+        eventId: 'order-42',
+        value: 1499.9,
+        currency: 'RUB',
+      );
+      expect(ads.path, '/delivery/delivery-1/conversion');
+      expect(ads.data, {
+        'event_id': 'order-42',
+        'conversion_type': 'purchase',
+        'value': 1499.9,
+        'currency': 'RUB',
+      });
+      expect(conversion.conversionValue, 1499.9);
+
+      final attributed = await repository.trackAttributedConversion(
+        'visitor-1',
+        eventId: 'order-43',
+        conversionType: 'signup',
+      );
+      expect(ads.path, '/attribution/conversion');
+      expect(ads.data, {
+        'visitor_id': 'visitor-1',
+        'event_id': 'order-43',
+        'conversion_type': 'signup',
+        'value': 0.0,
+        'currency': '',
+      });
+      expect(attributed.attributionModel, 'last_click');
+      expect(attributed.isFraud, isFalse);
+    },
+  );
+
+  test('admin user management uses protected admin contracts', () async {
+    final auth = _FakeApiTransport();
     final repository = AdPlatformRepository(
-      auth: _FakeApiTransport(),
-      ads: ads,
+      auth: auth,
+      ads: _FakeApiTransport(),
       analytics: _FakeApiTransport(),
     );
 
-    final delivery = await repository.selectAd(
-      requestId: 'request-1',
-      placementCode: 'placement-1',
-      visitorId: 'visitor-1',
-      age: 27,
-      country: 'RU',
-      deviceType: 'mobile',
-      operatingSystem: 'android',
+    final page = await repository.getAdminUsers(query: 'managed');
+    expect(auth.method, 'GET');
+    expect(auth.path, '/admin/users');
+    expect(auth.query?['query'], 'managed');
+    expect(page.items.single.email, 'managed@example.com');
+
+    final blocked = await repository.setAdminUserStatus(
+      page.items.single,
+      'block',
+      reason: 'confirmed abuse',
+      mfaCode: '123456',
     );
-    expect(delivery?.impressionUrl, contains('/impression'));
-    expect((ads.data! as Map<String, dynamic>)['audience'], {
-      'age': 27,
-      'gender': '',
-      'interests': <String>[],
+    expect(auth.path, '/admin/users/42/block');
+    expect(auth.data, {
+      'reason': 'confirmed abuse',
+      'row_version': 2,
+      'mfa_code': '123456',
     });
+    expect(blocked.isBlocked, isTrue);
 
-    final impression = await repository.trackImpression('delivery-1');
-    expect(ads.path, '/delivery/delivery-1/impression');
-    expect(impression.eventType, 'ad_impression');
-
-    final click = await repository.trackClick('delivery-1');
-    expect(ads.path, '/delivery/delivery-1/click');
-    expect(click.eventType, 'ad_click');
-
-    final conversion = await repository.trackConversion(
-      'delivery-1',
-      eventId: 'order-42',
-      value: 1499.9,
-      currency: 'RUB',
+    await repository.updateAdminUserRoles(
+      page.items.single,
+      ['user', 'support'],
+      reason: 'support duties',
+      mfaCode: '654321',
     );
-    expect(ads.path, '/delivery/delivery-1/conversion');
-    expect(ads.data, {
-      'event_id': 'order-42',
-      'conversion_type': 'purchase',
-      'value': 1499.9,
-      'currency': 'RUB',
-    });
-    expect(conversion.conversionValue, 1499.9);
+    expect(auth.method, 'PUT');
+    expect(auth.path, '/admin/users/42/roles');
   });
 }

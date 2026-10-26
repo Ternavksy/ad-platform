@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS delivery_stats (
     conversion_value Float64,
     conversion_type LowCardinality(String),
     conversion_currency LowCardinality(String),
+    attribution_model LowCardinality(String),
+    attribution_window_hours UInt16,
+    is_fraud UInt8,
+    fraud_reason LowCardinality(String),
     cost Float64,
     timestamp DateTime
 ) ENGINE = ReplacingMergeTree(timestamp)
@@ -79,3 +83,7 @@ ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversions UInt8 DEFAULT 0 
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_value Float64 DEFAULT 0 AFTER conversions;
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_type LowCardinality(String) DEFAULT '' AFTER conversion_value;
 ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS conversion_currency LowCardinality(String) DEFAULT '' AFTER conversion_type;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS attribution_model LowCardinality(String) DEFAULT '' AFTER conversion_currency;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS attribution_window_hours UInt16 DEFAULT 0 AFTER attribution_model;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS is_fraud UInt8 DEFAULT 0 AFTER attribution_window_hours;
+ALTER TABLE delivery_stats ADD COLUMN IF NOT EXISTS fraud_reason LowCardinality(String) DEFAULT '' AFTER is_fraud;

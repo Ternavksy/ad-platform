@@ -3,6 +3,7 @@ import 'package:ad_platform_mobile/src/data/ad_platform_repository.dart';
 import 'package:ad_platform_mobile/src/domain/models.dart';
 import 'package:ad_platform_mobile/src/state/providers.dart';
 import 'package:ad_platform_mobile/src/ui/analytics/analytics_screen.dart';
+import 'package:ad_platform_mobile/src/ui/admin/admin_shell.dart';
 import 'package:ad_platform_mobile/src/ui/auth/auth_screen.dart';
 import 'package:ad_platform_mobile/src/ui/billing/billing_screen.dart';
 import 'package:ad_platform_mobile/src/ui/campaigns/campaign_detail_screen.dart';
@@ -18,6 +19,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 const _user = AppUser(id: 1, email: 'long.username@example.com', role: 'user');
+
+const _admin = AppUser(
+  id: 2,
+  email: 'admin@example.com',
+  role: 'admin',
+  roles: ['admin'],
+  permissions: [
+    'users.read',
+    'users.block',
+    'users.roles.manage',
+    'users.sessions.revoke',
+    'moderation.review',
+    'audit.read',
+  ],
+  mfaEnabled: true,
+  workspaces: ['advertiser', 'admin'],
+);
 
 final _sampleState = AppDataState(
   balance: 987654321.45,
@@ -184,6 +202,34 @@ class _TestModerationController extends ModerationController {
   Future<void> review(int id, String decision, {String reason = ''}) async {}
 }
 
+class _TestAdminController extends AdminController {
+  _TestAdminController(super.repository) {
+    state = AdminState(
+      dashboard: const AdminDashboard(
+        totalUsers: 2,
+        activeUsers: 1,
+        blockedUsers: 1,
+        newUsers: 1,
+        recentAudit: [],
+      ),
+      users: [
+        AdminUser(
+          id: 1,
+          email: 'very.long.managed.user@example.com',
+          status: 'active',
+          roles: const ['user'],
+          permissions: const [],
+          rowVersion: 1,
+          createdAt: DateTime(2026, 10, 26),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> load({String? query, String? status}) async {}
+}
+
 Widget _testApp(Widget screen, {required double textScale}) {
   final repository = _FakeRepository();
   return ProviderScope(
@@ -194,6 +240,7 @@ Widget _testApp(Widget screen, {required double textScale}) {
       moderationProvider.overrideWith(
         (ref) => _TestModerationController(repository),
       ),
+      adminProvider.overrideWith((ref) => _TestAdminController(repository)),
     ],
     child: MaterialApp(
       theme: AppTheme.light,
@@ -268,5 +315,44 @@ void main() {
     await _pumpAt(tester, const HomeShell(), const Size(800, 1280));
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byType(NavigationRail), findsOneWidget);
+  });
+
+  testWidgets('admin workspace adapts to compact and wide screens', (
+    tester,
+  ) async {
+    final repository = _FakeRepository();
+    Widget app() => ProviderScope(
+      overrides: [
+        repositoryProvider.overrideWithValue(repository),
+        sessionProvider.overrideWith((ref) {
+          final controller = _TestSessionController(repository);
+          controller.state = const SessionState(
+            status: SessionStatus.authenticated,
+            user: _admin,
+            workspace: AppWorkspace.admin,
+          );
+          return controller;
+        }),
+        adminProvider.overrideWith((ref) => _TestAdminController(repository)),
+        moderationProvider.overrideWith(
+          (ref) => _TestModerationController(repository),
+        ),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const AdminShell()),
+    );
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    await tester.pumpWidget(app());
+    await tester.pump();
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pumpWidget(app());
+    await tester.pump();
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    addTearDown(tester.view.reset);
   });
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -16,8 +17,13 @@ import (
 const principalKey = "auth_principal"
 
 type Principal struct {
-	UserID int64
-	Role   string
+	UserID       int64
+	Role         string
+	Roles        []string
+	Permissions  []string
+	TokenVersion int
+	SessionID    string
+	MFA          bool
 }
 
 type jwtHeader struct {
@@ -25,12 +31,30 @@ type jwtHeader struct {
 }
 
 type jwtClaims struct {
-	Subject string `json:"sub"`
-	Role    string `json:"role"`
-	Expires int64  `json:"exp"`
+	Subject      string   `json:"sub"`
+	Role         string   `json:"role"`
+	Roles        []string `json:"roles"`
+	Permissions  []string `json:"permissions"`
+	TokenVersion int      `json:"token_version"`
+	SessionID    string   `json:"sid"`
+	MFA          bool     `json:"mfa"`
+	Issuer       string   `json:"iss"`
+	Audience     string   `json:"aud"`
+	Type         string   `json:"typ"`
+	JTI          string   `json:"jti"`
+	IssuedAt     int64    `json:"iat"`
+	Expires      int64    `json:"exp"`
 }
 
-func Authenticate(secret string) gin.HandlerFunc {
+type SecurityStateReader interface {
+	UserSecurityState(ctx context.Context, userID int64) (string, int, error)
+}
+
+type SessionStateReader interface {
+	SessionIsActive(ctx context.Context, userID int64, sessionID string) (bool, error)
+}
+
+func Authenticate(secret string, readers ...SecurityStateReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		value := strings.TrimSpace(c.GetHeader("Authorization"))
 		parts := strings.SplitN(value, " ", 2)
@@ -42,6 +66,34 @@ func Authenticate(secret string) gin.HandlerFunc {
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
 			return
+		}
+		if len(readers) > 0 && readers[0] != nil {
+			status, version, err := readers[0].UserSecurityState(c.Request.Context(), principal.UserID)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "security state unavailable"})
+				return
+			}
+			if status != "active" || version != principal.TokenVersion {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session has been revoked"})
+				return
+			}
+			if sessions, ok := readers[0].(SessionStateReader); ok {
+				if principal.SessionID == "" {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session is missing"})
+					return
+				}
+				active, err := sessions.SessionIsActive(
+					c.Request.Context(), principal.UserID, principal.SessionID,
+				)
+				if err != nil {
+					c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "session state unavailable"})
+					return
+				}
+				if !active {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session has been revoked"})
+					return
+				}
+			}
 		}
 		c.Set(principalKey, principal)
 		c.Next()
@@ -55,12 +107,48 @@ func RequireRole(role string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
-		if principal.Role != role {
+		if !principal.HasRole(role) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 			return
 		}
 		c.Next()
 	}
+}
+
+func RequirePermission(permission string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal, ok := CurrentPrincipal(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+			return
+		}
+		if !principal.HasPermission(permission) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (p Principal) HasRole(role string) bool {
+	if p.Role == role {
+		return true
+	}
+	for _, value := range p.Roles {
+		if value == role {
+			return true
+		}
+	}
+	return false
+}
+
+func (p Principal) HasPermission(permission string) bool {
+	for _, value := range p.Permissions {
+		if value == permission {
+			return true
+		}
+	}
+	return false
 }
 
 func CurrentPrincipal(c *gin.Context) (Principal, bool) {
@@ -100,8 +188,20 @@ func parseAccessToken(value, secret string, now time.Time) (Principal, bool) {
 		return Principal{}, false
 	}
 	userID, err := strconv.ParseInt(claims.Subject, 10, 64)
-	if err != nil || userID <= 0 || (claims.Role != "user" && claims.Role != "admin") {
+	if err != nil || userID <= 0 || claims.Type != "access" ||
+		claims.Issuer != "ad-platform-auth" || claims.Audience != "ad-platform" {
 		return Principal{}, false
 	}
-	return Principal{UserID: userID, Role: claims.Role}, true
+	if len(claims.Roles) == 0 && claims.Role != "" {
+		claims.Roles = []string{claims.Role}
+	}
+	if len(claims.Roles) == 0 || claims.TokenVersion <= 0 || claims.SessionID == "" ||
+		claims.JTI == "" || claims.IssuedAt <= 0 || claims.IssuedAt > now.Add(time.Minute).Unix() {
+		return Principal{}, false
+	}
+	return Principal{
+		UserID: userID, Role: claims.Role, Roles: claims.Roles,
+		Permissions: claims.Permissions, TokenVersion: claims.TokenVersion,
+		SessionID: claims.SessionID, MFA: claims.MFA,
+	}, true
 }

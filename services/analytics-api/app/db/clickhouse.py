@@ -39,6 +39,8 @@ class ClickhouseClient:
             'audience_interests', 'country', 'region', 'city', 'device_type',
             'operating_system', 'impressions', 'clicks', 'conversions',
             'conversion_value', 'conversion_type', 'conversion_currency',
+            'attribution_model', 'attribution_window_hours', 'is_fraud',
+            'fraud_reason',
             'cost', 'timestamp'
         ])
     
@@ -46,11 +48,14 @@ class ClickhouseClient:
                     start_date: str = None, end_date: str = None):
         query = """
             SELECT date, campaign_id, ad_id, creative_id, 
-                   sum(impressions) as total_impressions,
-                   sum(clicks) as total_clicks,
-                   sum(conversions) as total_conversions,
-                   sum(conversion_value) as total_conversion_value,
-                   sum(cost) as total_cost
+                   sumIf(impressions, is_fraud = 0) as total_impressions,
+                   sumIf(clicks, is_fraud = 0) as total_clicks,
+                   sumIf(conversions, is_fraud = 0) as total_conversions,
+                   sumIf(conversion_value, is_fraud = 0) as total_conversion_value,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'last_click') as last_click_conversions,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'view_through') as view_through_conversions,
+                   sum(is_fraud) as total_fraud_events,
+                   sumIf(cost, is_fraud = 0) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1
         """
@@ -80,11 +85,14 @@ class ClickhouseClient:
                           start_date: str = None, end_date: str = None):
         query = """
             SELECT date, campaign_id,
-                   sum(impressions) as total_impressions,
-                   sum(clicks) as total_clicks,
-                   sum(conversions) as total_conversions,
-                   sum(conversion_value) as total_conversion_value,
-                   sum(cost) as total_cost
+                   sumIf(impressions, is_fraud = 0) as total_impressions,
+                   sumIf(clicks, is_fraud = 0) as total_clicks,
+                   sumIf(conversions, is_fraud = 0) as total_conversions,
+                   sumIf(conversion_value, is_fraud = 0) as total_conversion_value,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'last_click') as last_click_conversions,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'view_through') as view_through_conversions,
+                   sum(is_fraud) as total_fraud_events,
+                   sumIf(cost, is_fraud = 0) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1
         """
@@ -110,11 +118,14 @@ class ClickhouseClient:
                           start_date: str = None, end_date: str = None):
         query = """
             SELECT date, creative_id,
-                   sum(impressions) as total_impressions,
-                   sum(clicks) as total_clicks,
-                   sum(conversions) as total_conversions,
-                   sum(conversion_value) as total_conversion_value,
-                   sum(cost) as total_cost
+                   sumIf(impressions, is_fraud = 0) as total_impressions,
+                   sumIf(clicks, is_fraud = 0) as total_clicks,
+                   sumIf(conversions, is_fraud = 0) as total_conversions,
+                   sumIf(conversion_value, is_fraud = 0) as total_conversion_value,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'last_click') as last_click_conversions,
+                   sumIf(conversions, is_fraud = 0 AND attribution_model = 'view_through') as view_through_conversions,
+                   sum(is_fraud) as total_fraud_events,
+                   sumIf(cost, is_fraud = 0) as total_cost
             FROM delivery_stats FINAL
             WHERE 1=1
         """

@@ -39,6 +39,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       0,
       (sum, item) => sum + item.conversionValue,
     );
+    final lastClickConversions = points.fold<int>(
+      0,
+      (sum, item) => sum + item.lastClickConversions,
+    );
+    final viewThroughConversions = points.fold<int>(
+      0,
+      (sum, item) => sum + item.viewThroughConversions,
+    );
+    final fraudEvents = points.fold<int>(
+      0,
+      (sum, item) => sum + item.fraudEvents,
+    );
     final cost = points.fold<double>(0, (sum, item) => sum + item.cost);
     final ctr = impressions == 0 ? 0.0 : clicks / impressions * 100;
     final conversionRate = clicks == 0 ? 0.0 : conversions / clicks * 100;
@@ -156,11 +168,66 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  _AnalyticsMetric(
-                    icon: Icons.account_balance_wallet_outlined,
-                    color: AppColors.teal,
-                    label: 'Ценность конверсий',
-                    value: moneyFormat.format(conversionValue),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AnalyticsMetric(
+                          icon: Icons.account_balance_wallet_outlined,
+                          color: AppColors.teal,
+                          label: 'Ценность конверсий',
+                          value: moneyFormat.format(conversionValue),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AnalyticsMetric(
+                          icon: Icons.security_rounded,
+                          color: AppColors.coral,
+                          label: 'Отфильтровано',
+                          value: NumberFormat.compact(
+                            locale: 'ru',
+                          ).format(fraudEvents),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SurfaceCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SectionTitle('Атрибуция конверсий'),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            Chip(
+                              avatar: const Icon(
+                                Icons.ads_click_rounded,
+                                size: 18,
+                              ),
+                              label: Text(
+                                'Последний клик · $lastClickConversions',
+                              ),
+                            ),
+                            Chip(
+                              avatar: const Icon(
+                                Icons.visibility_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                'После просмотра · $viewThroughConversions',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Окна атрибуции: 7 дней после клика и 24 часа после показа.',
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 24),
                   SurfaceCard(

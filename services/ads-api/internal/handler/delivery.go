@@ -24,6 +24,8 @@ func (h *DeliveryHandler) Select(c *gin.Context) {
 		HandleError(c, service.ErrInvalidInput)
 		return
 	}
+	req.SourceIP = c.ClientIP()
+	req.UserAgent = c.Request.UserAgent()
 	item, err := h.service.Select(c.Request.Context(), req)
 	if errors.Is(err, service.ErrNoDelivery) {
 		c.Status(http.StatusNoContent)
@@ -37,6 +39,20 @@ func (h *DeliveryHandler) Select(c *gin.Context) {
 	item.ClickURL = absoluteTrackingURL(c, item.ClickURL)
 	item.ConversionURL = absoluteTrackingURL(c, item.ConversionURL)
 	c.JSON(http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) AttributedConversion(c *gin.Context) {
+	var req model.AttributionConversionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		HandleError(c, service.ErrInvalidInput)
+		return
+	}
+	result, err := h.service.TrackAttributedConversion(c.Request.Context(), req)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func absoluteTrackingURL(c *gin.Context, path string) string {

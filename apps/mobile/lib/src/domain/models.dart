@@ -1,15 +1,203 @@
 class AppUser {
-  const AppUser({required this.id, required this.email, required this.role});
+  const AppUser({
+    required this.id,
+    required this.email,
+    required this.role,
+    this.roles = const ['user'],
+    this.permissions = const [],
+    this.status = 'active',
+    this.mfaEnabled = false,
+    this.passwordResetRequired = false,
+    this.workspaces = const ['advertiser'],
+  });
 
   final int id;
   final String email;
   final String role;
+  final List<String> roles;
+  final List<String> permissions;
+  final String status;
+  final bool mfaEnabled;
+  final bool passwordResetRequired;
+  final List<String> workspaces;
+
+  bool get canAdminister => workspaces.contains('admin');
+  bool can(String permission) => permissions.contains(permission);
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
     id: (json['id'] as num).toInt(),
     email: json['email'] as String,
     role: json['role'] as String? ?? 'user',
+    roles:
+        (json['roles'] as List? ?? [json['role'] ?? 'user'])
+            .map((item) => item.toString())
+            .toList(),
+    permissions:
+        (json['permissions'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+    status: json['status'] as String? ?? 'active',
+    mfaEnabled: json['mfa_enabled'] as bool? ?? false,
+    passwordResetRequired: json['password_reset_required'] as bool? ?? false,
+    workspaces:
+        (json['workspaces'] as List? ?? const ['advertiser'])
+            .map((item) => item.toString())
+            .toList(),
   );
+}
+
+class MfaChallenge {
+  const MfaChallenge({
+    required this.token,
+    this.setupRequired = false,
+    this.secret,
+    this.otpauthUri,
+  });
+
+  final String token;
+  final bool setupRequired;
+  final String? secret;
+  final String? otpauthUri;
+}
+
+class AdminDashboard {
+  const AdminDashboard({
+    required this.totalUsers,
+    required this.activeUsers,
+    required this.blockedUsers,
+    required this.newUsers,
+    required this.recentAudit,
+    this.pendingModeration = 0,
+    this.fraudEvents = 0,
+  });
+
+  final int totalUsers;
+  final int activeUsers;
+  final int blockedUsers;
+  final int newUsers;
+  final int pendingModeration;
+  final int fraudEvents;
+  final List<AdminAuditEvent> recentAudit;
+
+  factory AdminDashboard.fromJson(Map<String, dynamic> json) => AdminDashboard(
+    totalUsers: (json['total_users'] as num?)?.toInt() ?? 0,
+    activeUsers: (json['active_users'] as num?)?.toInt() ?? 0,
+    blockedUsers: (json['blocked_users'] as num?)?.toInt() ?? 0,
+    newUsers: (json['new_users'] as num?)?.toInt() ?? 0,
+    pendingModeration: (json['pending_moderation'] as num?)?.toInt() ?? 0,
+    fraudEvents: (json['fraud_events'] as num?)?.toInt() ?? 0,
+    recentAudit:
+        (json['recent_audit'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(AdminAuditEvent.fromJson)
+            .toList(),
+  );
+}
+
+class AdminUser {
+  const AdminUser({
+    required this.id,
+    required this.email,
+    required this.status,
+    required this.roles,
+    required this.permissions,
+    required this.rowVersion,
+    required this.createdAt,
+    this.lastLoginAt,
+    this.blockReason = '',
+    this.suspendedUntil,
+    this.balance = 0,
+    this.activeSessions = 0,
+    this.campaigns = 0,
+    this.transactions = 0,
+    this.fraudEvents = 0,
+    this.recentAudit = const [],
+  });
+
+  final int id;
+  final String email;
+  final String status;
+  final List<String> roles;
+  final List<String> permissions;
+  final int rowVersion;
+  final DateTime createdAt;
+  final DateTime? lastLoginAt;
+  final String blockReason;
+  final DateTime? suspendedUntil;
+  final double balance;
+  final int activeSessions;
+  final int campaigns;
+  final int transactions;
+  final int fraudEvents;
+  final List<AdminAuditEvent> recentAudit;
+
+  bool get isActive => status == 'active';
+  bool get isBlocked => status == 'blocked';
+  bool get isSuspended => status == 'suspended';
+
+  factory AdminUser.fromJson(Map<String, dynamic> json) => AdminUser(
+    id: (json['id'] as num).toInt(),
+    email: json['email'] as String,
+    status: json['status'] as String? ?? 'active',
+    roles:
+        (json['roles'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+    permissions:
+        (json['permissions'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+    rowVersion: (json['row_version'] as num?)?.toInt() ?? 1,
+    createdAt:
+        DateTime.tryParse(json['created_at'] as String? ?? '')?.toLocal() ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    lastLoginAt:
+        DateTime.tryParse(json['last_login_at'] as String? ?? '')?.toLocal(),
+    blockReason: json['block_reason'] as String? ?? '',
+    suspendedUntil:
+        DateTime.tryParse(json['suspended_until'] as String? ?? '')?.toLocal(),
+    balance: (json['balance'] as num?)?.toDouble() ?? 0,
+    activeSessions: (json['active_sessions'] as num?)?.toInt() ?? 0,
+    campaigns: (json['campaigns'] as num?)?.toInt() ?? 0,
+    transactions: (json['transactions'] as num?)?.toInt() ?? 0,
+    fraudEvents: (json['fraud_events'] as num?)?.toInt() ?? 0,
+    recentAudit:
+        (json['recent_audit'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(AdminAuditEvent.fromJson)
+            .toList(),
+  );
+}
+
+class AdminAuditEvent {
+  const AdminAuditEvent({
+    required this.id,
+    required this.actorUserId,
+    required this.action,
+    required this.targetType,
+    required this.targetId,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  final int id;
+  final int actorUserId;
+  final String action;
+  final String targetType;
+  final String targetId;
+  final String reason;
+  final DateTime createdAt;
+
+  factory AdminAuditEvent.fromJson(Map<String, dynamic> json) =>
+      AdminAuditEvent(
+        id: (json['id'] as num).toInt(),
+        actorUserId: (json['actor_user_id'] as num).toInt(),
+        action: json['action'] as String,
+        targetType: json['target_type'] as String,
+        targetId: json['target_id'].toString(),
+        reason: json['reason'] as String? ?? '',
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      );
 }
 
 class Campaign {
@@ -444,6 +632,10 @@ class TrackingReceipt {
     this.conversionType = '',
     this.conversionValue = 0,
     this.conversionCurrency = '',
+    this.attributionModel = '',
+    this.attributionWindowHours = 0,
+    this.isFraud = false,
+    this.fraudReason = '',
   });
 
   final String deliveryId;
@@ -454,6 +646,10 @@ class TrackingReceipt {
   final String conversionType;
   final double conversionValue;
   final String conversionCurrency;
+  final String attributionModel;
+  final int attributionWindowHours;
+  final bool isFraud;
+  final String fraudReason;
 
   factory TrackingReceipt.fromJson(Map<String, dynamic> json) =>
       TrackingReceipt(
@@ -463,9 +659,13 @@ class TrackingReceipt {
         recorded: json['recorded'] as bool? ?? false,
         occurredAt: DateTime.parse(json['occurred_at'] as String).toLocal(),
         conversionType: json['conversion_type'] as String? ?? '',
-        conversionValue:
-            (json['conversion_value'] as num?)?.toDouble() ?? 0,
+        conversionValue: (json['conversion_value'] as num?)?.toDouble() ?? 0,
         conversionCurrency: json['conversion_currency'] as String? ?? '',
+        attributionModel: json['attribution_model'] as String? ?? '',
+        attributionWindowHours:
+            (json['attribution_window_hours'] as num?)?.toInt() ?? 0,
+        isFraud: json['is_fraud'] as bool? ?? false,
+        fraudReason: json['fraud_reason'] as String? ?? '',
       );
 }
 
@@ -506,6 +706,9 @@ class AnalyticsPoint {
     required this.clicks,
     required this.conversions,
     required this.conversionValue,
+    this.lastClickConversions = 0,
+    this.viewThroughConversions = 0,
+    this.fraudEvents = 0,
     required this.cost,
   });
 
@@ -517,11 +720,13 @@ class AnalyticsPoint {
   final int clicks;
   final int conversions;
   final double conversionValue;
+  final int lastClickConversions;
+  final int viewThroughConversions;
+  final int fraudEvents;
   final double cost;
 
   double get ctr => impressions == 0 ? 0 : clicks / impressions * 100;
-  double get conversionRate =>
-      clicks == 0 ? 0 : conversions / clicks * 100;
+  double get conversionRate => clicks == 0 ? 0 : conversions / clicks * 100;
 
   factory AnalyticsPoint.fromJson(Map<String, dynamic> json) => AnalyticsPoint(
     date: DateTime.parse(json['date'] as String),
@@ -531,8 +736,12 @@ class AnalyticsPoint {
     impressions: (json['total_impressions'] as num).toInt(),
     clicks: (json['total_clicks'] as num).toInt(),
     conversions: (json['total_conversions'] as num?)?.toInt() ?? 0,
-    conversionValue:
-        (json['total_conversion_value'] as num?)?.toDouble() ?? 0,
+    conversionValue: (json['total_conversion_value'] as num?)?.toDouble() ?? 0,
+    lastClickConversions:
+        (json['last_click_conversions'] as num?)?.toInt() ?? 0,
+    viewThroughConversions:
+        (json['view_through_conversions'] as num?)?.toInt() ?? 0,
+    fraudEvents: (json['total_fraud_events'] as num?)?.toInt() ?? 0,
     cost: (json['total_cost'] as num).toDouble(),
   );
 }

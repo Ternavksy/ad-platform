@@ -12,6 +12,6 @@ class HealthViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
-    def test_admin_login_page(self):
+    def test_separate_django_admin_is_disabled(self):
         response = self.client.get("/admin/login/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 404)

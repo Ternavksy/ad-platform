@@ -51,6 +51,10 @@ func main() {
 	if rabbitmqURL == "" {
 		rabbitmqURL = "amqp://guest:guest@rabbitmq:5672/"
 	}
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://redis:6379/0"
+	}
 
 	rabbitmqService, err := service.NewRabbitMQService(rabbitmqURL)
 	if err != nil {
@@ -84,9 +88,17 @@ func main() {
 	deliveryStore := store.NewDeliveryStore(db)
 	deliveryService := service.NewDeliveryService(deliveryStore)
 	deliveryHandler := handler.NewDeliveryHandler(deliveryService)
+	authorizationStore, err := store.NewAuthorizationStore(db, redisURL)
+	if err != nil {
+		panic(err)
+	}
+	defer authorizationStore.Close()
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
 	go service.NewDeliveryDispatcher(deliveryStore, rabbitmqService).Run(appCtx)
+	if rabbitmqService != nil {
+		go rabbitmqService.ConsumeUserBlocked(appCtx, authorizationStore.ApplyUserBlocked)
+	}
 
 	r := gin.New()
 	r.MaxMultipartMemory = 8 << 20
@@ -106,36 +118,37 @@ func main() {
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	r.POST("/campaigns", campaignHandler.Create)
-	r.GET("/campaigns", campaignHandler.List)
-	r.GET("/campaigns/:id", campaignHandler.Get)
-	r.PUT("/campaigns/:id", campaignHandler.Update)
-	r.DELETE("/campaigns/:id", campaignHandler.Delete)
+	private := r.Group("")
+	private.Use(handler.Authenticate(jwtSecret, authorizationStore))
 
-	r.POST("/ads", adHandler.Create)
-	r.GET("/ads", adHandler.List)
-	r.GET("/ads/:id", adHandler.Get)
-	r.PUT("/ads/:id", adHandler.Update)
-	r.DELETE("/ads/:id", adHandler.Delete)
+	private.POST("/campaigns", campaignHandler.Create)
+	private.GET("/campaigns", campaignHandler.List)
+	private.GET("/campaigns/:id", campaignHandler.Get)
+	private.PUT("/campaigns/:id", campaignHandler.Update)
+	private.DELETE("/campaigns/:id", campaignHandler.Delete)
 
-	r.POST("/creatives", creativeHandler.Create)
-	r.POST("/creatives/upload", creativeHandler.Upload)
-	r.GET("/creatives", creativeHandler.List)
-	r.GET("/creatives/:id", creativeHandler.Get)
-	r.PUT("/creatives/:id", creativeHandler.Update)
-	r.PUT("/creatives/:id/upload", creativeHandler.UpdateUpload)
-	r.DELETE("/creatives/:id", creativeHandler.Delete)
-	r.POST("/creatives/:id/submit", handler.Authenticate(jwtSecret), creativeHandler.SubmitForModeration)
-	r.GET(
+	private.POST("/ads", adHandler.Create)
+	private.GET("/ads", adHandler.List)
+	private.GET("/ads/:id", adHandler.Get)
+	private.PUT("/ads/:id", adHandler.Update)
+	private.DELETE("/ads/:id", adHandler.Delete)
+
+	private.POST("/creatives", creativeHandler.Create)
+	private.POST("/creatives/upload", creativeHandler.Upload)
+	private.GET("/creatives", creativeHandler.List)
+	private.GET("/creatives/:id", creativeHandler.Get)
+	private.PUT("/creatives/:id", creativeHandler.Update)
+	private.PUT("/creatives/:id/upload", creativeHandler.UpdateUpload)
+	private.DELETE("/creatives/:id", creativeHandler.Delete)
+	private.POST("/creatives/:id/submit", creativeHandler.SubmitForModeration)
+	private.GET(
 		"/moderation/creatives",
-		handler.Authenticate(jwtSecret),
-		handler.RequireRole("admin"),
+		handler.RequirePermission("moderation.review"),
 		creativeHandler.ListModeration,
 	)
-	r.POST(
+	private.POST(
 		"/moderation/creatives/:id/review",
-		handler.Authenticate(jwtSecret),
-		handler.RequireRole("admin"),
+		handler.RequirePermission("moderation.review"),
 		creativeHandler.ReviewModeration,
 	)
 	r.GET("/media/:filename", func(c *gin.Context) {
@@ -154,29 +167,30 @@ func main() {
 		c.File(fullPath)
 	})
 
-	r.POST("/sites", inventoryHandler.CreateSite)
-	r.GET("/sites", inventoryHandler.ListSites)
-	r.GET("/sites/:id", inventoryHandler.GetSite)
-	r.PUT("/sites/:id", inventoryHandler.UpdateSite)
-	r.DELETE("/sites/:id", inventoryHandler.DeleteSite)
+	private.POST("/sites", inventoryHandler.CreateSite)
+	private.GET("/sites", inventoryHandler.ListSites)
+	private.GET("/sites/:id", inventoryHandler.GetSite)
+	private.PUT("/sites/:id", inventoryHandler.UpdateSite)
+	private.DELETE("/sites/:id", inventoryHandler.DeleteSite)
 
-	r.POST("/formats", inventoryHandler.CreateFormat)
-	r.GET("/formats", inventoryHandler.ListFormats)
-	r.GET("/formats/:id", inventoryHandler.GetFormat)
-	r.PUT("/formats/:id", inventoryHandler.UpdateFormat)
-	r.DELETE("/formats/:id", inventoryHandler.DeleteFormat)
+	private.POST("/formats", handler.RequirePermission("users.roles.manage"), inventoryHandler.CreateFormat)
+	private.GET("/formats", inventoryHandler.ListFormats)
+	private.GET("/formats/:id", inventoryHandler.GetFormat)
+	private.PUT("/formats/:id", handler.RequirePermission("users.roles.manage"), inventoryHandler.UpdateFormat)
+	private.DELETE("/formats/:id", handler.RequirePermission("users.roles.manage"), inventoryHandler.DeleteFormat)
 
-	r.POST("/placements", inventoryHandler.CreatePlacement)
-	r.GET("/placements", inventoryHandler.ListPlacements)
-	r.GET("/placements/:id", inventoryHandler.GetPlacement)
-	r.PUT("/placements/:id", inventoryHandler.UpdatePlacement)
-	r.DELETE("/placements/:id", inventoryHandler.DeletePlacement)
+	private.POST("/placements", inventoryHandler.CreatePlacement)
+	private.GET("/placements", inventoryHandler.ListPlacements)
+	private.GET("/placements/:id", inventoryHandler.GetPlacement)
+	private.PUT("/placements/:id", inventoryHandler.UpdatePlacement)
+	private.DELETE("/placements/:id", inventoryHandler.DeletePlacement)
 
 	r.POST("/delivery/select", deliveryHandler.Select)
 	r.POST("/delivery/:id/impression", deliveryHandler.Impression)
 	r.POST("/delivery/:id/click", deliveryHandler.Click)
 	r.GET("/delivery/:id/click", deliveryHandler.ClickAndRedirect)
 	r.POST("/delivery/:id/conversion", deliveryHandler.Conversion)
+	r.POST("/attribution/conversion", deliveryHandler.AttributedConversion)
 
 	srv := &http.Server{
 		Addr:    ":8080",

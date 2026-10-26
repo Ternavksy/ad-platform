@@ -146,3 +146,21 @@ func (s *InventoryStore) SiteAndFormatExist(ctx context.Context, siteID, formatI
 	`, siteID, formatID)
 	return count == 1, err
 }
+
+func (s *InventoryStore) PlacementOwnedByUser(ctx context.Context, placementID, userID int64) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `
+		SELECT COUNT(*)
+		FROM placements p JOIN sites s ON s.id = p.site_id
+		WHERE p.id = ? AND s.user_id = ?
+	`, placementID, userID)
+	return count == 1, err
+}
+
+func (s *InventoryStore) SiteOwnedByUser(ctx context.Context, siteID, userID int64) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `
+		SELECT COUNT(*) FROM sites WHERE id = ? AND user_id = ?
+	`, siteID, userID)
+	return count == 1, err
+}

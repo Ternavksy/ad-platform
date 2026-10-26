@@ -250,3 +250,17 @@ func (s *InventoryService) DeletePlacement(ctx context.Context, id int64) error 
 	}
 	return s.store.DeletePlacement(ctx, id)
 }
+
+func (s *InventoryService) SiteOwnedByUser(ctx context.Context, siteID, userID int64) (bool, error) {
+	if siteID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.SiteOwnedByUser(ctx, siteID, userID)
+}
+
+func (s *InventoryService) PlacementOwnedByUser(ctx context.Context, placementID, userID int64) (bool, error) {
+	if placementID <= 0 || userID <= 0 {
+		return false, ErrForbidden
+	}
+	return s.store.PlacementOwnedByUser(ctx, placementID, userID)
+}

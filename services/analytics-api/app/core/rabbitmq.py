@@ -144,6 +144,10 @@ def create_message_handler():
                 float(message.get("conversion_value", 0.0)) if event_type == "ad_conversion" else 0.0,
                 str(message.get("conversion_type", "")) if event_type == "ad_conversion" else "",
                 str(message.get("conversion_currency", "")) if event_type == "ad_conversion" else "",
+                str(message.get("attribution_model", "")),
+                int(message.get("attribution_window_hours", 0)),
+                1 if message.get("is_fraud", False) else 0,
+                str(message.get("fraud_reason", "")),
                 float(message.get("cost", 0.0)) if event_type == "ad_impression" else 0.0,
                 timestamp,
             )

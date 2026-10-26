@@ -10,7 +10,7 @@ RUN CGO_ENABLED=1 go test ./... && go vet ./...
 
 FROM dependencies AS builder
 COPY . .
-RUN GOOS=linux GOARCH=amd64 go build -o /bin/ads-api ./cmd/server
+RUN CGO_ENABLED=0 go build -o /bin/ads-api ./cmd/server
 
 FROM alpine:3.18
 COPY --from=builder /bin/ads-api /bin/ads-api

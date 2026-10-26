@@ -96,6 +96,16 @@ func (s *CreativeStore) IsOwnedByUser(ctx context.Context, creativeID, userID in
 	return exists == 1, err
 }
 
+func (s *CreativeStore) AdOwnedByUser(ctx context.Context, adID, userID int64) (bool, error) {
+	var count int
+	err := s.db.GetContext(ctx, &count, `
+		SELECT COUNT(*)
+		FROM ads a JOIN campaigns c ON c.id = a.campaign_id
+		WHERE a.id = ? AND c.user_id = ?
+	`, adID, userID)
+	return count == 1, err
+}
+
 func (s *CreativeStore) SubmitForModeration(ctx context.Context, id int64, submittedAt time.Time) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE creatives
